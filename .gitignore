@@ -1,0 +1,19 @@
+# Konfiguration (enthält Passwörter!)
+config.yaml
+
+# Pakete (werden lokal heruntergeladen)
+packages/
+*.deb
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/

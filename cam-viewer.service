@@ -1,0 +1,21 @@
+[Unit]
+Description=Kamera-Viewer für Netzwerkkameras
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Environment=HOME=/home/pi
+WorkingDirectory=/home/pi/cam-viewer
+ExecStart=/home/pi/cam-viewer/start.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+# Wichtig: Zugriff auf TTY/Konsole
+TTYPath=/dev/tty1
+StandardInput=tty
+
+[Install]
+WantedBy=multi-user.target
