@@ -37,21 +37,8 @@ echo ""
 echo -e "${BLUE}--- Netzwerkkonfiguration ---${NC}"
 echo ""
 
-# Aktuelle Netzwerkschnittstelle ermitteln
-DEFAULT_IFACE=$(ip route | grep default | awk '{print $5}' | head -1)
-if [ -z "$DEFAULT_IFACE" ]; then
-    # Fallback: erste eth-Schnittstelle
-    DEFAULT_IFACE=$(ip link | grep -E "^[0-9]+: e" | head -1 | cut -d: -f2 | tr -d ' ')
-fi
-if [ -z "$DEFAULT_IFACE" ]; then
-    DEFAULT_IFACE="eth0"
-fi
+NETWORK_IFACE="eth0"
 
-echo "Erkannte Netzwerkschnittstelle: $DEFAULT_IFACE"
-read -p "Netzwerkschnittstelle [$DEFAULT_IFACE]: " NETWORK_IFACE
-NETWORK_IFACE="${NETWORK_IFACE:-$DEFAULT_IFACE}"
-
-echo ""
 echo "Die Kameras haben vermutlich IPs wie 192.168.1.100, 192.168.1.101, ..."
 echo "Der Pi braucht eine freie IP im selben Netz, z.B. 192.168.1.50"
 echo ""
@@ -79,10 +66,8 @@ case "$NETMASK" in
     *) CIDR="24" ;;
 esac
 
-# Gateway (optional)
-echo ""
-echo "Gateway ist optional (nur nötig wenn der Pi Internet braucht)"
-read -p "Gateway [leer = keins]: " GATEWAY
+# Kein Gateway nötig (isoliertes Kameranetz)
+GATEWAY=""
 
 echo ""
 echo -e "${BLUE}Konfiguriere Netzwerk...${NC}"
