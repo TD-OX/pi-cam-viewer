@@ -89,40 +89,39 @@ def start_mpv_stream(rtsp_url: str, geometry: dict, name: str, transport: str, b
     """Startet einen mpv-Prozess für einen Kamera-Stream."""
     
     # mpv-Optionen für stabiles RTSP-Streaming
+    # Vereinfachte Konfiguration für maximale Kompatibilität
     cmd = [
         'mpv',
         '--no-terminal',
-        '--no-osc',                    # Kein On-Screen-Controller
-        '--no-input-default-bindings', # Keine Tastatur-Shortcuts
-        '--no-input-cursor',           # Kein Cursor
-        '--cursor-autohide=always',    # Cursor immer verstecken
-        '--no-border',                 # Kein Fensterrahmen
-        '--ontop',                     # Immer im Vordergrund
-        '--keepaspect=no',             # Fülle das Fenster komplett
-        '--hwdec=auto',                # Hardware-Dekodierung wenn möglich
-        '--vo=gpu,x11',                # Video-Output
+        '--no-osc',
+        '--no-input-default-bindings',
+        '--no-border',
+        '--keepaspect=no',
+        '--vo=x11',                    # Reines X11 (am kompatibelsten)
+        '--hwdec=no',                  # Keine HW-Dekodierung (stabil)
+        '--profile=low-latency',
         f'--geometry={geometry["w"]}x{geometry["h"]}+{geometry["x"]}+{geometry["y"]}',
         f'--rtsp-transport={transport}',
-        f'--cache=yes',
-        f'--cache-secs={buffer_ms / 1000}',
-        f'--demuxer-lavf-o=rtsp_transport={transport}',
-        '--demuxer-max-bytes=50M',
-        '--demuxer-readahead-secs=3',
+        '--cache=yes',
+        '--demuxer-max-bytes=20M',
         '--network-timeout=10',
-        '--stream-lavf-o=timeout=10000000',  # 10 Sekunden Timeout
-        '--loop=inf',                  # Bei Verbindungsabbruch neu verbinden
-        '--idle=yes',
+        '--loop=inf',
         '--force-window=yes',
         '--title=' + name,
         rtsp_url
     ]
     
-    print(f"Starte {name}: {rtsp_url.replace(rtsp_url.split('@')[0].split('://')[1], '***')}@...")
+    # URL für Logging maskieren (Passwort verstecken)
+    safe_url = rtsp_url
+    if '@' in rtsp_url:
+        prefix, suffix = rtsp_url.split('@', 1)
+        safe_url = prefix.split('://')[0] + '://***@' + suffix
+    print(f"Starte {name}: {safe_url}")
     
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         start_new_session=True
     )
     
