@@ -5,7 +5,23 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_DIR="/home/pi/cam-viewer"
+
+# Benutzer ermitteln (der das Skript mit sudo aufgerufen hat)
+if [ -n "$SUDO_USER" ]; then
+    TARGET_USER="$SUDO_USER"
+else
+    # Fallback: ersten normalen Benutzer finden (UID >= 1000)
+    TARGET_USER=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1; exit}')
+fi
+
+if [ -z "$TARGET_USER" ] || [ "$TARGET_USER" = "root" ]; then
+    echo "Fehler: Konnte keinen Benutzer ermitteln."
+    echo "Bitte mit 'sudo ./install.sh' als normaler Benutzer ausführen."
+    exit 1
+fi
+
+TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+INSTALL_DIR="$TARGET_HOME/cam-viewer"
 
 # Farben
 RED='\033[0;31m'
@@ -58,19 +74,41 @@ chmod +x "$INSTALL_DIR/xinitrc"
 chmod +x "$INSTALL_DIR/cam-viewer.py"
 chmod +x "$INSTALL_DIR/test-camera.sh"
 chmod +x "$INSTALL_DIR/setup.sh"
-chown -R pi:pi "$INSTALL_DIR"
+chown -R "$TARGET_USER:$TARGET_USER" "$INSTALL_DIR"
 
 echo "Installiere systemd-Service..."
-cp "$SCRIPT_DIR/cam-viewer.service" /etc/systemd/system/
+# Service-Datei mit korrektem Benutzer erstellen
+cat > /etc/systemd/system/cam-viewer.service << EOF
+[Unit]
+Description=Kamera-Viewer für Netzwerkkameras
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$TARGET_USER
+Environment=HOME=$TARGET_HOME
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/start.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+TTYPath=/dev/tty1
+StandardInput=tty
+
+[Install]
+WantedBy=multi-user.target
+EOF
 systemctl daemon-reload
 
 echo ""
 echo "Konfiguriere Auto-Login auf TTY1..."
 mkdir -p /etc/systemd/system/getty@tty1.service.d/
-cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'EOF'
+cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
+ExecStart=-/sbin/agetty --autologin $TARGET_USER --noclear %I \$TERM
 EOF
 
 echo "Deaktiviere Bildschirm-Blanking..."
@@ -90,6 +128,9 @@ fi
 echo ""
 echo -e "${GREEN}Installation der Systemkomponenten abgeschlossen!${NC}"
 echo ""
+echo "Benutzer: $TARGET_USER"
+echo "Installationsverzeichnis: $INSTALL_DIR"
+echo ""
 echo "============================================"
 echo ""
 
@@ -102,7 +143,7 @@ else
     echo "Setup übersprungen."
     echo ""
     echo "Kameras später einrichten mit:"
-    echo "  sudo /home/pi/cam-viewer/setup.sh"
+    echo "  sudo $INSTALL_DIR/setup.sh"
     echo ""
     echo "Dann Service aktivieren:"
     echo "  sudo systemctl enable cam-viewer"

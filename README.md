@@ -21,11 +21,9 @@ Zeigt RTSP-Streams von Netzwerkkameras (Burgwächter/ONVIF) auf einem Raspberry 
 
 ```bash
 # Repository klonen
-git clone https://github.com/TD-OX/pi-cam-viewer.git
+git clone https://github.com/DEIN-USERNAME/pi-cam-viewer.git
 cd pi-cam-viewer
-sudo chmod +x install.sh
 
-sh ./install.sh
 # Installieren (inkl. interaktivem Kamera-Setup)
 sudo ./install.sh
 ```
@@ -48,7 +46,7 @@ sudo reboot
 ## Kameras später ändern
 
 ```bash
-sudo /home/pi/cam-viewer/setup.sh
+sudo ~/cam-viewer/setup.sh
 sudo systemctl restart cam-viewer
 ```
 
@@ -79,7 +77,7 @@ sudo systemctl stop cam-viewer
 ## Einzelne Kamera testen
 
 ```bash
-/home/pi/cam-viewer/test-camera.sh 192.168.1.100 admin passwort
+~/cam-viewer/test-camera.sh 192.168.1.100 admin passwort
 ```
 
 ## Fehlerbehebung

@@ -4,7 +4,14 @@
 
 set -e
 
-CONFIG_FILE="/home/pi/cam-viewer/config.yaml"
+# Benutzer ermitteln
+if [ -n "$SUDO_USER" ]; then
+    TARGET_USER="$SUDO_USER"
+else
+    TARGET_USER=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1; exit}')
+fi
+TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+CONFIG_FILE="$TARGET_HOME/cam-viewer/config.yaml"
 
 # Farben für bessere Lesbarkeit
 RED='\033[0;31m'
@@ -155,7 +162,7 @@ for cam in "${CAMERAS[@]}"; do
 done
 
 # Berechtigungen
-chown pi:pi "$CONFIG_FILE"
+chown "$TARGET_USER:$TARGET_USER" "$CONFIG_FILE"
 chmod 600 "$CONFIG_FILE"  # Nur Owner kann lesen (wegen Passwörter)
 
 echo ""
@@ -179,5 +186,5 @@ echo -e "${YELLOW}Nächste Schritte:${NC}"
 echo "  1. Service aktivieren:  sudo systemctl enable cam-viewer"
 echo "  2. System neu starten:  sudo reboot"
 echo ""
-echo "Später Kameras ändern:   sudo /home/pi/cam-viewer/setup.sh"
+echo "Später Kameras ändern:   sudo $TARGET_HOME/cam-viewer/setup.sh"
 echo ""
