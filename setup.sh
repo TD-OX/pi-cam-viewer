@@ -2,6 +2,11 @@
 # Interaktives Setup für den Kamera-Viewer
 # Fragt nach Kameras und erstellt die Konfiguration
 
+# Sicherstellen dass das Skript mit bash läuft
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 set -e
 
 # Benutzer ermitteln
@@ -24,6 +29,135 @@ echo ""
 echo -e "${BLUE}======================================"
 echo "   Kamera-Viewer Setup"
 echo -e "======================================${NC}"
+echo ""
+
+# ============================================
+# Netzwerkkonfiguration
+# ============================================
+echo -e "${BLUE}--- Netzwerkkonfiguration ---${NC}"
+echo ""
+
+# Aktuelle Netzwerkschnittstelle ermitteln
+DEFAULT_IFACE=$(ip route | grep default | awk '{print $5}' | head -1)
+if [ -z "$DEFAULT_IFACE" ]; then
+    # Fallback: erste eth-Schnittstelle
+    DEFAULT_IFACE=$(ip link | grep -E "^[0-9]+: e" | head -1 | cut -d: -f2 | tr -d ' ')
+fi
+if [ -z "$DEFAULT_IFACE" ]; then
+    DEFAULT_IFACE="eth0"
+fi
+
+echo "Erkannte Netzwerkschnittstelle: $DEFAULT_IFACE"
+read -p "Netzwerkschnittstelle [$DEFAULT_IFACE]: " NETWORK_IFACE
+NETWORK_IFACE="${NETWORK_IFACE:-$DEFAULT_IFACE}"
+
+echo ""
+echo "Die Kameras haben vermutlich IPs wie 192.168.1.100, 192.168.1.101, ..."
+echo "Der Pi braucht eine freie IP im selben Netz, z.B. 192.168.1.50"
+echo ""
+
+# IP-Adresse
+while true; do
+    read -p "IP-Adresse für den Pi: " PI_IP
+    if [[ "$PI_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        break
+    fi
+    echo -e "${RED}Ungültige IP-Adresse. Format: 192.168.1.50${NC}"
+done
+
+# Subnetzmaske
+read -p "Subnetzmaske [255.255.255.0]: " NETMASK
+NETMASK="${NETMASK:-255.255.255.0}"
+
+# CIDR berechnen
+case "$NETMASK" in
+    "255.255.255.0") CIDR="24" ;;
+    "255.255.0.0") CIDR="16" ;;
+    "255.0.0.0") CIDR="8" ;;
+    "255.255.255.128") CIDR="25" ;;
+    "255.255.255.192") CIDR="26" ;;
+    *) CIDR="24" ;;
+esac
+
+# Gateway (optional)
+echo ""
+echo "Gateway ist optional (nur nötig wenn der Pi Internet braucht)"
+read -p "Gateway [leer = keins]: " GATEWAY
+
+echo ""
+echo -e "${BLUE}Konfiguriere Netzwerk...${NC}"
+
+# Netzwerk konfigurieren - prüfen welches System verwendet wird
+if systemctl is-active --quiet NetworkManager; then
+    # NetworkManager (neuere Systeme)
+    echo "Verwende NetworkManager..."
+    
+    # Bestehende Verbindung löschen falls vorhanden
+    nmcli con delete "cam-viewer-static" 2>/dev/null || true
+    
+    # Neue statische Verbindung erstellen
+    if [ -n "$GATEWAY" ]; then
+        nmcli con add type ethernet con-name "cam-viewer-static" ifname "$NETWORK_IFACE" \
+            ipv4.addresses "$PI_IP/$CIDR" \
+            ipv4.gateway "$GATEWAY" \
+            ipv4.method manual \
+            autoconnect yes
+    else
+        nmcli con add type ethernet con-name "cam-viewer-static" ifname "$NETWORK_IFACE" \
+            ipv4.addresses "$PI_IP/$CIDR" \
+            ipv4.method manual \
+            autoconnect yes
+    fi
+    
+    # Verbindung aktivieren
+    nmcli con up "cam-viewer-static"
+    
+elif [ -f /etc/dhcpcd.conf ]; then
+    # dhcpcd (ältere Pi OS Versionen)
+    echo "Verwende dhcpcd..."
+    
+    # Alte Einträge entfernen
+    sed -i '/# cam-viewer static IP/,/^$/d' /etc/dhcpcd.conf
+    
+    # Neue Konfiguration anhängen
+    cat >> /etc/dhcpcd.conf << EOF
+
+# cam-viewer static IP
+interface $NETWORK_IFACE
+static ip_address=$PI_IP/$CIDR
+EOF
+    
+    if [ -n "$GATEWAY" ]; then
+        echo "static routers=$GATEWAY" >> /etc/dhcpcd.conf
+    fi
+    
+    echo "" >> /etc/dhcpcd.conf
+    
+else
+    # Fallback: /etc/network/interfaces
+    echo "Verwende /etc/network/interfaces..."
+    
+    # Backup
+    cp /etc/network/interfaces /etc/network/interfaces.backup 2>/dev/null || true
+    
+    cat > /etc/network/interfaces << EOF
+# Loopback
+auto lo
+iface lo inet loopback
+
+# Kamera-Netzwerk (statisch)
+auto $NETWORK_IFACE
+iface $NETWORK_IFACE inet static
+    address $PI_IP
+    netmask $NETMASK
+EOF
+    
+    if [ -n "$GATEWAY" ]; then
+        echo "    gateway $GATEWAY" >> /etc/network/interfaces
+    fi
+fi
+
+echo -e "${GREEN}Netzwerk konfiguriert: $PI_IP/$CIDR auf $NETWORK_IFACE${NC}"
 echo ""
 
 # Anzahl Kameras
@@ -173,6 +307,7 @@ echo ""
 echo "Konfiguration gespeichert: $CONFIG_FILE"
 echo ""
 echo "Zusammenfassung:"
+echo "  - Pi IP-Adresse: $PI_IP/$CIDR"
 echo "  - Kameras: $NUM_CAMERAS"
 echo "  - RTSP-Pfad: $DEFAULT_RTSP_PATH"
 echo ""
@@ -181,10 +316,4 @@ for cam in "${CAMERAS[@]}"; do
     IFS='|' read -r name ip user pass rtsp <<< "$cam"
     echo "  - $name ($ip)"
 done
-echo ""
-echo -e "${YELLOW}Nächste Schritte:${NC}"
-echo "  1. Service aktivieren:  sudo systemctl enable cam-viewer"
-echo "  2. System neu starten:  sudo reboot"
-echo ""
-echo "Später Kameras ändern:   sudo $TARGET_HOME/cam-viewer/setup.sh"
 echo ""

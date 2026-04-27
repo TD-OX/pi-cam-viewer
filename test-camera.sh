@@ -2,6 +2,11 @@
 # Testet RTSP-Verbindungen zu Kameras
 # Verwendung: ./test-camera.sh <IP> <USER> <PASS> [RTSP_PATH]
 
+# Sicherstellen dass das Skript mit bash läuft
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 if [ -z "$1" ]; then
     echo "Verwendung: $0 <IP> <USER> <PASS> [RTSP_PATH]"
     echo ""

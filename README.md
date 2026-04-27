@@ -29,19 +29,15 @@ sudo ./install.sh
 ```
 
 Das Setup fragt ab:
-1. Anzahl der Kameras
-2. RTSP-Pfad (Burgwächter/Dahua, Hikvision, etc.)
-3. Ob alle Kameras gleiche Zugangsdaten haben
-4. Für jede Kamera: Name, IP, Benutzer, Passwort
+1. **Netzwerk:** IP-Adresse für den Pi, Subnetzmaske, Gateway (optional)
+2. Anzahl der Kameras
+3. RTSP-Pfad (Burgwächter/Dahua, Hikvision, etc.)
+4. Ob alle Kameras gleiche Zugangsdaten haben
+5. Für jede Kamera: Name, IP, Benutzer, Passwort
 
 Nach dem Setup:
-```bash
-# Service aktivieren
-sudo systemctl enable cam-viewer
-
-# Neustart
-sudo reboot
-```
+- Service wird automatisch aktiviert
+- System startet automatisch neu
 
 ## Kameras später ändern
 

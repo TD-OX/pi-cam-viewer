@@ -2,6 +2,11 @@
 # Installationsskript für den Kamera-Viewer
 # Verwendung: sudo ./install.sh
 
+# Sicherstellen dass das Skript mit bash läuft
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -138,12 +143,27 @@ echo ""
 read -p "Möchtest du jetzt die Kameras einrichten? [J/n]: " DO_SETUP
 if [[ ! "$DO_SETUP" =~ ^[Nn]$ ]]; then
     bash "$INSTALL_DIR/setup.sh"
+    
+    echo ""
+    echo "Aktiviere Autostart..."
+    systemctl enable cam-viewer
+    
+    echo ""
+    echo -e "${GREEN}======================================"
+    echo "   Installation komplett!"
+    echo -e "======================================${NC}"
+    echo ""
+    echo "Das System wird jetzt neu gestartet."
+    echo "Nach dem Neustart startet der Kamera-Viewer automatisch."
+    echo ""
+    read -p "Drücke Enter zum Neustarten..." 
+    reboot
 else
     echo ""
     echo "Setup übersprungen."
     echo ""
     echo "Kameras später einrichten mit:"
-    echo "  sudo $INSTALL_DIR/setup.sh"
+    echo "  sudo bash $INSTALL_DIR/setup.sh"
     echo ""
     echo "Dann Service aktivieren:"
     echo "  sudo systemctl enable cam-viewer"
