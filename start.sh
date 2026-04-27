@@ -23,9 +23,6 @@ done
 # Warte noch etwas bis alles stabil ist
 sleep 3
 
-# X11 starten mit Openbox als Window Manager
-# Der Viewer wird als einzige Anwendung gestartet
-export DISPLAY=:0
-
+# X11 starten - der xinitrc übernimmt den Rest
 echo "Starte X-Server..."
-exec startx "$SCRIPT_DIR/xinitrc" -- -nocursor vt1
+exec startx "$SCRIPT_DIR/xinitrc" -- -nocursor

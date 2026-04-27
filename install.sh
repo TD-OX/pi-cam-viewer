@@ -81,32 +81,6 @@ chmod +x "$INSTALL_DIR/test-camera.sh"
 chmod +x "$INSTALL_DIR/setup.sh"
 chown -R "$TARGET_USER:$TARGET_USER" "$INSTALL_DIR"
 
-echo "Installiere systemd-Service..."
-# Service-Datei mit korrektem Benutzer erstellen
-cat > /etc/systemd/system/cam-viewer.service << EOF
-[Unit]
-Description=Kamera-Viewer für Netzwerkkameras
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=$TARGET_USER
-Environment=HOME=$TARGET_HOME
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/start.sh
-Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-TTYPath=/dev/tty1
-StandardInput=tty
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload
-
 echo ""
 echo "Konfiguriere Auto-Login auf TTY1..."
 mkdir -p /etc/systemd/system/getty@tty1.service.d/
@@ -115,6 +89,44 @@ cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
 ExecStart=
 ExecStart=-/sbin/agetty --autologin $TARGET_USER --noclear %I \$TERM
 EOF
+
+echo "Konfiguriere X11 für normale Benutzer..."
+# Auf Bookworm muss startx auch von normalen Usern startbar sein
+mkdir -p /etc/X11
+cat > /etc/X11/Xwrapper.config << 'EOF'
+allowed_users=anybody
+needs_root_rights=yes
+EOF
+
+echo "Konfiguriere Auto-Start beim Login..."
+# Beim Login auf TTY1 automatisch den Viewer starten
+PROFILE_FILE="$TARGET_HOME/.bash_profile"
+
+# Alten Auto-Start entfernen falls vorhanden
+if [ -f "$PROFILE_FILE" ]; then
+    sed -i '/# cam-viewer auto-start/,/# cam-viewer auto-start end/d' "$PROFILE_FILE"
+fi
+
+# Auto-Start hinzufügen
+cat >> "$PROFILE_FILE" << EOF
+
+# cam-viewer auto-start
+if [ -z "\$DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
+    cd $INSTALL_DIR
+    exec ./start.sh
+fi
+# cam-viewer auto-start end
+EOF
+
+chown "$TARGET_USER:$TARGET_USER" "$PROFILE_FILE"
+
+# Alten Service entfernen falls vorhanden
+if [ -f /etc/systemd/system/cam-viewer.service ]; then
+    systemctl disable cam-viewer 2>/dev/null || true
+    systemctl stop cam-viewer 2>/dev/null || true
+    rm /etc/systemd/system/cam-viewer.service
+    systemctl daemon-reload
+fi
 
 echo "Deaktiviere Bildschirm-Blanking..."
 # Für ältere Pi OS Versionen
@@ -145,10 +157,6 @@ if [[ ! "$DO_SETUP" =~ ^[Nn]$ ]]; then
     bash "$INSTALL_DIR/setup.sh"
     
     echo ""
-    echo "Aktiviere Autostart..."
-    systemctl enable cam-viewer
-    
-    echo ""
     echo -e "${GREEN}======================================"
     echo "   Installation komplett!"
     echo -e "======================================${NC}"
@@ -165,7 +173,6 @@ else
     echo "Kameras später einrichten mit:"
     echo "  sudo bash $INSTALL_DIR/setup.sh"
     echo ""
-    echo "Dann Service aktivieren:"
-    echo "  sudo systemctl enable cam-viewer"
+    echo "Danach neu starten:"
     echo "  sudo reboot"
 fi
