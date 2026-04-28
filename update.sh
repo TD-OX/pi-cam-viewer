@@ -43,7 +43,16 @@ sudo -u "$TARGET_USER" git pull
 echo ""
 echo "2/5 Installiere benötigte Pakete..."
 apt-get update
-apt-get install -y mpv ffmpeg python3 python3-yaml
+apt-get install -y \
+    mpv \
+    ffmpeg \
+    python3 \
+    python3-yaml \
+    gstreamer1.0-tools \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-libav
 
 echo ""
 echo "3/5 Räume alte X11-Konfiguration auf..."

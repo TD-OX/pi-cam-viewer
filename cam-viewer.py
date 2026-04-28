@@ -55,15 +55,28 @@ def cleanup(signum=None, frame=None):
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, OSError):
             pass
+    
+    # Konsole zurücksetzen, sonst bleibt der Bildschirm schwarz
+    try:
+        # Display/Konsole zurücksetzen
+        subprocess.run(['setterm', '--reset'], check=False, stderr=subprocess.DEVNULL)
+        # Cursor wieder einblenden
+        sys.stdout.write('\033[?25h\033c')
+        sys.stdout.flush()
+        # TTY neu zeichnen
+        subprocess.run(['chvt', '1'], check=False, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    
     print("[cleanup] Beendet.", flush=True)
     sys.exit(0)
 
-def run_single_camera(camera: dict, defaults: dict):
-    """Eine Kamera direkt fullscreen auf DRM mit minimaler Latenz."""
+def run_camera(camera: dict, defaults: dict, duration: int = None):
+    """Zeigt eine Kamera fullscreen auf DRM. Optional: Begrenzte Dauer in Sekunden."""
     rtsp_url = build_rtsp_url(camera, defaults)
     transport = camera.get('transport', defaults.get('transport', 'tcp'))
     
-    print(f"[main] Starte Kamera: {camera['name']} ({safe_url_for_log(rtsp_url)})", flush=True)
+    print(f"[main] Zeige: {camera['name']} ({safe_url_for_log(rtsp_url)})", flush=True)
     
     cmd = [
         'mpv',
@@ -74,29 +87,143 @@ def run_single_camera(camera: dict, defaults: dict):
         '--hwdec=auto-safe',
         '--fullscreen',
         '--keepaspect=no',
-        # === Latenz-Optimierungen ===
-        '--profile=low-latency',           # Aktiviert viele Low-Latency-Defaults
-        '--cache=no',                      # Kein Cache
-        '--untimed',                       # Keine Frame-Timing-Verzögerung
-        '--no-correct-pts',                # PTS nicht korrigieren
-        '--video-sync=desync',             # Sofortige Wiedergabe
+        # Latenz-Optimierungen
+        '--profile=low-latency',
+        '--cache=no',
+        '--untimed',
+        '--no-correct-pts',
+        '--video-sync=desync',
         '--demuxer-lavf-o-set=fflags=+nobuffer+flush_packets',
         '--demuxer-lavf-o-set=flags=+low_delay',
-        '--vd-lavc-threads=1',             # Single-Thread = niedrigere Latenz
-        # === RTSP ===
+        '--vd-lavc-threads=1',
         f'--rtsp-transport={transport}',
         '--network-timeout=10',
-        '--loop=inf',
         rtsp_url
     ]
     
+    try:
+        proc = subprocess.Popen(cmd, start_new_session=True)
+        processes.append(proc)
+        try:
+            proc.wait(timeout=duration)
+        except subprocess.TimeoutExpired:
+            # Cycle-Wechsel: mpv beenden
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        if processes and processes[-1] == proc:
+            processes.pop()
+    except FileNotFoundError:
+        print("[main] FEHLER: mpv nicht gefunden!", flush=True)
+        sys.exit(1)
+    except Exception as e:
+        print(f"[main] Fehler: {e}", flush=True)
+
+def run_single_camera(camera: dict, defaults: dict):
+    """Eine Kamera dauerhaft fullscreen."""
     while True:
-        print(f"[main] Starte mpv...", flush=True)
+        run_camera(camera, defaults, duration=None)
+        print(f"[main] mpv beendet, neu in 5s...", flush=True)
+        time.sleep(5)
+
+def get_grid_layout(n: int) -> tuple:
+    """Gibt (cols, rows) für n Kameras zurück."""
+    if n <= 1: return (1, 1)
+    if n == 2: return (2, 1)
+    if n == 3: return (3, 1)
+    if n == 4: return (2, 2)
+    if n <= 6: return (3, 2)
+    if n <= 9: return (3, 3)
+    if n <= 12: return (4, 3)
+    return (4, 4)
+
+def build_lavfi_complex(num_cams: int, screen_w: int = 1920, screen_h: int = 1080) -> tuple:
+    """Baut den lavfi-complex Filter-Graph für n Kameras.
+    Gibt (filter_string, cell_w, cell_h) zurück."""
+    cols, rows = get_grid_layout(num_cams)
+    
+    cell_w = (screen_w // cols) - ((screen_w // cols) % 2)
+    cell_h = (screen_h // rows) - ((screen_h // rows) % 2)
+    
+    parts = []
+    
+    # Jede Kamera skalieren (vid1 = erste Kamera, vid2 = zweite, ...)
+    for i in range(num_cams):
+        parts.append(f'[vid{i+1}]scale={cell_w}:{cell_h}:force_original_aspect_ratio=disable,setsar=1[s{i}]')
+    
+    # Bei nicht-quadratischen Kamera-Anzahlen mit schwarzen Slots auffüllen
+    total_slots = cols * rows
+    for i in range(num_cams, total_slots):
+        parts.append(f'color=size={cell_w}x{cell_h}:color=black:duration=999999[s{i}]')
+    
+    # xstack mit absoluten Pixelpositionen
+    inputs = ''.join([f'[s{i}]' for i in range(total_slots)])
+    layout_parts = []
+    for i in range(total_slots):
+        col = i % cols
+        row = i // cols
+        layout_parts.append(f'{col * cell_w}_{row * cell_h}')
+    layout = '|'.join(layout_parts)
+    
+    parts.append(f'{inputs}xstack=inputs={total_slots}:layout={layout}[vo]')
+    
+    return ';'.join(parts), cell_w, cell_h
+
+def run_multi_camera(cameras: list, defaults: dict):
+    """Alle Kameras gleichzeitig in einem Mosaic - via mpv lavfi-complex."""
+    num_cameras = len(cameras)
+    transport = defaults.get('transport', 'tcp')
+    
+    cols, rows = get_grid_layout(num_cameras)
+    print(f"[main] Mosaic: {cols}x{rows} Grid für {num_cameras} Kameras", flush=True)
+    
+    # Filter-Graph bauen
+    lavfi, cell_w, cell_h = build_lavfi_complex(num_cameras)
+    print(f"[main] Jede Kamera: {cell_w}x{cell_h}", flush=True)
+    
+    # URLs bauen
+    urls = [build_rtsp_url(cam, defaults) for cam in cameras]
+    
+    # mpv-Befehl
+    cmd = [
+        'mpv',
+        '--no-terminal',
+        '--no-osc',
+        '--no-input-default-bindings',
+        '--vo=drm',
+        '--hwdec=no',
+        '--fullscreen',
+        '--keepaspect=no',
+        # Latenz-Optimierungen
+        '--profile=low-latency',
+        '--cache=no',
+        '--untimed',
+        '--no-correct-pts',
+        '--video-sync=desync',
+        '--demuxer-lavf-o-set=fflags=+nobuffer+flush_packets',
+        '--demuxer-lavf-o-set=flags=+low_delay',
+        f'--rtsp-transport={transport}',
+        '--network-timeout=10',
+        f'--lavfi-complex={lavfi}',
+    ]
+    
+    # Kameras 2..N als external_file
+    for url in urls[1:]:
+        cmd.append(f'--external-file={url}')
+    
+    # Hauptkamera (vid1) am Ende
+    cmd.append(urls[0])
+    
+    print(f"[main] Starte mpv mit lavfi-complex Mosaic...", flush=True)
+    
+    while True:
         try:
             proc = subprocess.Popen(cmd, start_new_session=True)
             processes.append(proc)
             proc.wait()
-            print(f"[main] mpv beendet (Code: {proc.returncode}), neu in 5s...", flush=True)
+            print(f"[main] mpv beendet (Code: {proc.returncode})", flush=True)
         except FileNotFoundError:
             print("[main] FEHLER: mpv nicht gefunden!", flush=True)
             sys.exit(1)
@@ -105,98 +232,6 @@ def run_single_camera(camera: dict, defaults: dict):
         
         if processes and processes[-1] == proc:
             processes.pop()
-        time.sleep(5)
-
-def run_multi_camera(cameras: list, defaults: dict):
-    """Mehrere Streams via ffmpeg mosaic + mpv auf DRM mit niedriger Latenz."""
-    num_cameras = len(cameras)
-    cols = math.ceil(math.sqrt(num_cameras))
-    rows = math.ceil(num_cameras / cols)
-    
-    target_w = (1920 // cols) - ((1920 // cols) % 2)
-    target_h = (1080 // rows) - ((1080 // rows) % 2)
-    
-    print(f"[main] Mosaic: {cols}x{rows} Grid, {target_w}x{target_h} pro Kamera", flush=True)
-    
-    # ffmpeg mit Low-Latency-Optionen
-    cmd = ['ffmpeg', '-loglevel', 'warning',
-           '-fflags', 'nobuffer+flush_packets',
-           '-flags', 'low_delay',
-           '-strict', 'experimental']
-    
-    for cam in cameras:
-        rtsp_url = build_rtsp_url(cam, defaults)
-        transport = cam.get('transport', defaults.get('transport', 'tcp'))
-        cmd.extend([
-            '-rtsp_transport', transport,
-            '-fflags', 'nobuffer',
-            '-i', rtsp_url
-        ])
-    
-    filter_parts = []
-    for i in range(num_cameras):
-        filter_parts.append(f'[{i}:v]scale={target_w}:{target_h},setpts=PTS-STARTPTS[s{i}]')
-    
-    layout_parts = []
-    for i in range(num_cameras):
-        col = i % cols
-        row = i // cols
-        layout_parts.append(f'{col * target_w}_{row * target_h}')
-    
-    inputs_str = ''.join([f'[s{i}]' for i in range(num_cameras)])
-    filter_parts.append(f'{inputs_str}xstack=inputs={num_cameras}:layout={"|".join(layout_parts)}[out]')
-    
-    cmd.extend([
-        '-filter_complex', ';'.join(filter_parts),
-        '-map', '[out]',
-        '-c:v', 'rawvideo',
-        '-pix_fmt', 'yuv420p',
-        '-tune', 'zerolatency',
-        '-f', 'rawvideo',
-        '-'
-    ])
-    
-    mpv_cmd = [
-        'mpv', '--no-terminal', '--no-osc',
-        '--no-input-default-bindings',
-        '--vo=drm', '--hwdec=no', '--fullscreen',
-        # Latenz-Optimierungen
-        '--profile=low-latency',
-        '--cache=no',
-        '--untimed',
-        '--no-correct-pts',
-        '--video-sync=desync',
-        '--vd-lavc-threads=1',
-        # Rawvideo-Demuxer
-        '--demuxer=rawvideo',
-        f'--demuxer-rawvideo-w={cols * target_w}',
-        f'--demuxer-rawvideo-h={rows * target_h}',
-        '--demuxer-rawvideo-mp-format=yuv420p',
-        '--demuxer-rawvideo-fps=15',
-        '-'
-    ]
-    
-    while True:
-        print(f"[main] Starte ffmpeg + mpv...", flush=True)
-        try:
-            ffmpeg_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                           stderr=subprocess.STDOUT, start_new_session=True)
-            mpv_proc = subprocess.Popen(mpv_cmd, stdin=ffmpeg_proc.stdout, start_new_session=True)
-            processes.extend([ffmpeg_proc, mpv_proc])
-            mpv_proc.wait()
-            print(f"[main] mpv beendet (Code: {mpv_proc.returncode})", flush=True)
-            try:
-                ffmpeg_proc.terminate()
-                ffmpeg_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                ffmpeg_proc.kill()
-        except FileNotFoundError as e:
-            print(f"[main] FEHLER: {e}", flush=True)
-            sys.exit(1)
-        except Exception as e:
-            print(f"[main] Fehler: {e}", flush=True)
-        
-        processes.clear()
         print(f"[main] Neu starten in 5s...", flush=True)
         time.sleep(5)
 
@@ -218,6 +253,7 @@ def main():
     
     cameras = config.get('cameras', [])
     defaults = config.get('defaults', {})
+    cycle_interval = config.get('display', {}).get('cycle_interval', 10)
     
     if not cameras:
         print("[main] FEHLER: Keine Kameras in der Konfiguration!", flush=True)
@@ -233,10 +269,10 @@ def main():
         pass
     
     if len(cameras) == 1:
-        print("[main] Modus: Single-Camera", flush=True)
+        print("[main] Modus: Single-Camera (Vollbild)", flush=True)
         run_single_camera(cameras[0], defaults)
     else:
-        print(f"[main] Modus: Multi-Camera Mosaic", flush=True)
+        print(f"[main] Modus: Mosaic - alle Kameras gleichzeitig", flush=True)
         run_multi_camera(cameras, defaults)
 
 if __name__ == '__main__':
