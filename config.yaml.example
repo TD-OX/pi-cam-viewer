@@ -1,62 +1,51 @@
-# Kamera-Viewer Konfiguration
-# ============================
+# Kamera-Viewer Konfiguration - Beispiel
+# ========================================
+# Diese Datei wird vom setup.sh automatisch erstellt.
+# Manuelle Bearbeitung nur wenn nötig.
 
-# Display-Einstellungen
 display:
-  # Auflösung des Monitors (wird automatisch erkannt wenn leer)
-  resolution: ""  # z.B. "1920x1080" oder leer für Auto
-  
-  # Layout: "grid" für automatisches Raster, "manual" für manuelle Positionen
-  layout: "grid"
-  
-  # Hintergrundfarbe (schwarz)
+  # Auflösung des Monitors (leer = Auto)
+  resolution: ""
+  # Hintergrundfarbe
   background: "#000000"
 
-# Globale Kamera-Einstellungen (können pro Kamera überschrieben werden)
+# Globale Standardwerte (können pro Kamera überschrieben werden)
 defaults:
-  # RTSP-Port (Standard: 554)
   port: 554
   
-  # RTSP-Pfad - häufige Varianten:
+  # RTSP-Pfade für gängige Hersteller:
+  # AXIS:              /axis-media/media.amp
   # Burgwächter/Dahua: /cam/realmonitor?channel=1&subtype=0
-  # Hikvision: /Streaming/Channels/101
-  # ONVIF generisch: /stream1 oder /live/main
-  # Substream (niedriger Auflösung): subtype=1 oder Channels/102
-  rtsp_path: "/cam/realmonitor?channel=1&subtype=0"
+  # Hikvision:         /Streaming/Channels/101
+  # ONVIF generisch:   /stream1
+  rtsp_path: "/axis-media/media.amp"
   
-  # Transport: "tcp" (stabiler) oder "udp" (weniger Latenz)
+  # Transport: "tcp" (stabil) oder "udp" (weniger Latenz)
   transport: "tcp"
   
-  # Puffer in Millisekunden (höher = stabiler, mehr Latenz)
   buffer_ms: 500
 
 # Kamera-Liste
 cameras:
-  - name: "Kamera 1"
+  - name: "Eingang"
     ip: "192.168.1.100"
     username: "admin"
     password: "passwort123"
-    # Optional: Eigener RTSP-Pfad falls abweichend
-    # rtsp_path: "/Streaming/Channels/101"
     
-  - name: "Kamera 2"
+  - name: "Halle"
     ip: "192.168.1.101"
     username: "admin"
     password: "passwort123"
-    
-  - name: "Kamera 3"
-    ip: "192.168.1.102"
-    username: "admin"
-    password: "passwort123"
-    
-  - name: "Kamera 4"
-    ip: "192.168.1.103"
-    username: "admin"
-    password: "passwort123"
 
-# Beispiel für Kamera ohne Authentifizierung:
+# Beispiel ohne Authentifizierung:
 #  - name: "Öffentliche Kamera"
 #    ip: "192.168.1.110"
 #    username: ""
 #    password: ""
-#    rtsp_path: "/stream1"
+
+# Beispiel mit eigenem RTSP-Pfad:
+#  - name: "Hikvision-Kamera"
+#    ip: "192.168.1.120"
+#    username: "admin"
+#    password: "passwort123"
+#    rtsp_path: "/Streaming/Channels/101"

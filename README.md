@@ -1,92 +1,122 @@
 # Pi Kamera-Viewer
 
-Zeigt RTSP-Streams von Netzwerkkameras (Burgwächter/ONVIF) auf einem Raspberry Pi ohne Desktop an.
+Zeigt RTSP-Streams von Netzwerkkameras (AXIS, Burgwächter, Hikvision, ONVIF) auf einem Raspberry Pi ohne Desktop an.
 
 ## Features
 
-- **Interaktives Setup** - Kameras einfach per Assistent einrichten
+- **DRM-Mode** - kein X11/Desktop nötig, sehr stabil
+- **Interaktives Setup** - Kameras per Assistent einrichten
+- **Statisches Netzwerk** - Pi konfiguriert sich selbst eine IP im Kamera-Netz
 - Automatischer Start beim Booten
-- Automatisches Grid-Layout (1-16 Kameras)
+- Automatisches Mosaic für mehrere Kameras (via ffmpeg)
+- Vollbild für Einzelkameras
 - Automatischer Reconnect bei Verbindungsabbruch
-- Minimales System (kein Desktop nötig)
 
 ## Voraussetzungen
 
-- Raspberry Pi 3/4/5 mit Raspberry Pi OS Lite
+- Raspberry Pi 4 oder 5 (empfohlen) mit Raspberry Pi OS Lite (64-bit)
 - Monitor mit HDMI
 - Netzwerkkameras mit RTSP-Support
-- Internetverbindung (nur für Installation)
+- Ethernet-Verbindung zu den Kameras
 
-## Installation
+## Erstinstallation
+
+Pi kurz ans Internet hängen, dann:
 
 ```bash
 # Repository klonen
+cd ~
 git clone https://github.com/DEIN-USERNAME/pi-cam-viewer.git
 cd pi-cam-viewer
 
-# Installieren (inkl. interaktivem Kamera-Setup)
-sudo ./install.sh
+# Installieren (inkl. Setup und automatischem Reboot)
+sudo bash install.sh
 ```
 
-Das Setup fragt ab:
-1. **Netzwerk:** IP-Adresse für den Pi, Subnetzmaske, Gateway (optional)
-2. Anzahl der Kameras
-3. RTSP-Pfad (Burgwächter/Dahua, Hikvision, etc.)
-4. Ob alle Kameras gleiche Zugangsdaten haben
-5. Für jede Kamera: Name, IP, Benutzer, Passwort
+Das Setup fragt dich nacheinander:
 
-Nach dem Setup:
-- Service wird automatisch aktiviert
-- System startet automatisch neu
+1. **Netzwerk:** Welche IP soll der Pi bekommen? (z.B. `192.168.1.50` im Kamera-Netz)
+2. **Anzahl Kameras** (1-16)
+3. **RTSP-Pfad** der Kameras (AXIS, Burgwächter, Hikvision, ...)
+4. **Gleiche Zugangsdaten für alle?** (spart Tipparbeit)
+5. **Pro Kamera:** Name, IP, Benutzer, Passwort
+
+Nach dem Setup wird automatisch neu gestartet. Beim Boot startet der Viewer ohne weitere Eingriffe.
+
+## Update
+
+Wenn neue Versionen auf GitHub sind:
+
+```bash
+cd ~/pi-cam-viewer
+sudo bash update.sh
+```
+
+Das Skript holt die neueste Version, installiert ggf. neue Pakete und startet neu.
 
 ## Kameras später ändern
 
 ```bash
-sudo ~/cam-viewer/setup.sh
-sudo systemctl restart cam-viewer
+sudo bash ~/cam-viewer/setup.sh
+sudo reboot
 ```
 
-## Unterstützte Kamera-Typen
+Das Setup fragt alles erneut ab und überschreibt die Konfiguration.
 
-| Hersteller | RTSP-Pfad |
-|------------|-----------|
-| Burgwächter/Dahua | `/cam/realmonitor?channel=1&subtype=0` |
+## RTSP-Pfade
+
+| Hersteller | Pfad |
+|------------|------|
+| AXIS | `/axis-media/media.amp` |
+| Burgwächter / Dahua | `/cam/realmonitor?channel=1&subtype=0` |
 | Hikvision | `/Streaming/Channels/101` |
 | ONVIF generisch | `/stream1` |
 
 ## Befehle
 
 ```bash
-# Status
-sudo systemctl status cam-viewer
+# Logs anzeigen
+cat ~/cam-viewer/cam-viewer.log
 
-# Logs (live)
-journalctl -u cam-viewer -f
+# Manuelles Starten/Stoppen
+cd ~/cam-viewer
+./start.sh              # Manuell starten
+# Strg+C beendet
 
-# Neustart
-sudo systemctl restart cam-viewer
-
-# Stoppen
-sudo systemctl stop cam-viewer
-```
-
-## Einzelne Kamera testen
-
-```bash
+# Kamera testen
 ~/cam-viewer/test-camera.sh 192.168.1.100 admin passwort
 ```
+
+## Bedienung
+
+- **Strg+Alt+F2** wechselt auf eine Konsole für Wartung/Debug
+- **Strg+Alt+F1** zurück zum Kamera-Bild
+- Per SSH erreichbar (sofern aktiviert beim Image-Flashen)
+
+## Architektur
+
+- **Single-Camera:** mpv direkt mit `--vo=drm` im Vollbild
+- **Multi-Camera:** ffmpeg kombiniert die Streams via `xstack` zu einem Mosaic, mpv zeigt es
+- **Auto-Start:** über `.bash_profile` bei Auto-Login auf TTY1
+- **Netzwerk:** statische IP via NetworkManager oder dhcpcd
 
 ## Fehlerbehebung
 
 **Schwarzer Bildschirm:**
 ```bash
-journalctl -u cam-viewer -n 50
+# Auf TTY2 wechseln (Strg+Alt+F2), einloggen
+cat ~/cam-viewer/cam-viewer.log
 ```
 
 **Kamera nicht erreichbar:**
 ```bash
 ping 192.168.1.100
 nc -zv 192.168.1.100 554
+```
+
+**RTSP-Pfad falsch:**
+```bash
+~/cam-viewer/test-camera.sh 192.168.1.100 admin passwort /axis-media/media.amp
 ```
 
 ## Lizenz

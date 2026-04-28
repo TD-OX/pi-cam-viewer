@@ -2,7 +2,6 @@
 # Testet RTSP-Verbindungen zu Kameras
 # Verwendung: ./test-camera.sh <IP> <USER> <PASS> [RTSP_PATH]
 
-# Sicherstellen dass das Skript mit bash läuft
 if [ -z "$BASH_VERSION" ]; then
     exec bash "$0" "$@"
 fi
@@ -12,9 +11,10 @@ if [ -z "$1" ]; then
     echo ""
     echo "Beispiele:"
     echo "  $0 192.168.1.100 admin passwort123"
-    echo "  $0 192.168.1.100 admin passwort123 /Streaming/Channels/101"
+    echo "  $0 192.168.1.100 admin passwort123 /axis-media/media.amp"
     echo ""
     echo "Häufige RTSP-Pfade:"
+    echo "  AXIS:              /axis-media/media.amp"
     echo "  Burgwächter/Dahua: /cam/realmonitor?channel=1&subtype=0"
     echo "  Hikvision:         /Streaming/Channels/101"
     echo "  ONVIF generisch:   /stream1 oder /live/main"
@@ -24,9 +24,8 @@ fi
 IP="$1"
 USER="$2"
 PASS="$3"
-RTSP_PATH="${4:-/cam/realmonitor?channel=1&subtype=0}"
+RTSP_PATH="${4:-/axis-media/media.amp}"
 
-# URL zusammenbauen
 if [ -n "$USER" ] && [ -n "$PASS" ]; then
     URL="rtsp://${USER}:${PASS}@${IP}:554${RTSP_PATH}"
     URL_DISPLAY="rtsp://${USER}:***@${IP}:554${RTSP_PATH}"
@@ -45,28 +44,23 @@ echo "RTSP-Pfad: $RTSP_PATH"
 echo "URL:       $URL_DISPLAY"
 echo ""
 
-# Ping-Test
 echo "1. Ping-Test..."
 if ping -c 2 -W 2 "$IP" > /dev/null 2>&1; then
     echo "   ✓ Kamera erreichbar"
 else
-    echo "   ✗ Kamera nicht erreichbar (Ping fehlgeschlagen)"
-    echo "   → Prüfe IP-Adresse und Netzwerkverbindung"
+    echo "   ✗ Kamera nicht erreichbar"
     exit 1
 fi
 
-# Port-Test
 echo ""
 echo "2. Port-Test (554)..."
 if nc -zw2 "$IP" 554 2>/dev/null; then
     echo "   ✓ RTSP-Port offen"
 else
     echo "   ✗ RTSP-Port 554 nicht erreichbar"
-    echo "   → Prüfe ob die Kamera RTSP aktiviert hat"
     exit 1
 fi
 
-# RTSP-Test mit ffprobe
 echo ""
 echo "3. RTSP-Stream-Test..."
 if command -v ffprobe &> /dev/null; then
@@ -77,34 +71,22 @@ if command -v ffprobe &> /dev/null; then
     else
         echo "   ✗ Stream konnte nicht geöffnet werden"
         echo ""
-        echo "   Mögliche Ursachen:"
-        echo "   - Falscher RTSP-Pfad"
-        echo "   - Falsche Zugangsdaten"
-        echo "   - Kamera unterstützt kein RTSP"
-        echo ""
         echo "   Teste andere RTSP-Pfade:"
+        echo "   $0 $IP $USER $PASS /axis-media/media.amp"
         echo "   $0 $IP $USER $PASS /cam/realmonitor?channel=1&subtype=0"
         echo "   $0 $IP $USER $PASS /Streaming/Channels/101"
         echo "   $0 $IP $USER $PASS /stream1"
-        echo "   $0 $IP $USER $PASS /live/main"
     fi
 else
     echo "   ⚠ ffprobe nicht installiert, überspringe Stream-Test"
 fi
 
-# mpv-Test (optional, nur wenn Display verfügbar)
 echo ""
 echo "4. Video-Test mit mpv..."
 if command -v mpv &> /dev/null; then
-    if [ -n "$DISPLAY" ]; then
-        echo "   Starte mpv (10 Sekunden, dann automatisch beenden)..."
-        echo "   Drücke 'q' zum manuellen Beenden."
-        timeout 10 mpv --no-terminal --rtsp-transport=tcp "$URL" 2>/dev/null || true
-        echo "   Test beendet."
-    else
-        echo "   ⚠ Kein Display verfügbar, überspringe mpv-Test"
-        echo "   (Führe das Skript mit aktivem X-Server aus für Video-Test)"
-    fi
+    echo "   Starte mpv (10 Sekunden)..."
+    timeout 10 mpv --no-terminal --vo=drm --rtsp-transport=tcp "$URL" 2>/dev/null || true
+    echo "   Test beendet."
 else
     echo "   ⚠ mpv nicht installiert"
 fi

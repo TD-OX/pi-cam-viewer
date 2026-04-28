@@ -156,22 +156,24 @@ done
 
 echo ""
 echo -e "${YELLOW}Häufige RTSP-Pfade:${NC}"
-echo "  [1] /cam/realmonitor?channel=1&subtype=0  (Burgwächter/Dahua)"
-echo "  [2] /Streaming/Channels/101               (Hikvision)"
-echo "  [3] /stream1                              (ONVIF generisch)"
-echo "  [4] Eigenen Pfad eingeben"
+echo "  [1] /axis-media/media.amp                 (AXIS)"
+echo "  [2] /cam/realmonitor?channel=1&subtype=0  (Burgwächter/Dahua)"
+echo "  [3] /Streaming/Channels/101               (Hikvision)"
+echo "  [4] /stream1                              (ONVIF generisch)"
+echo "  [5] Eigenen Pfad eingeben"
 echo ""
 
 while true; do
-    read -p "Welchen RTSP-Pfad verwenden die Kameras? [1-4]: " RTSP_CHOICE
+    read -p "Welchen RTSP-Pfad verwenden die Kameras? [1-5]: " RTSP_CHOICE
     case $RTSP_CHOICE in
-        1) DEFAULT_RTSP_PATH="/cam/realmonitor?channel=1&subtype=0"; break;;
-        2) DEFAULT_RTSP_PATH="/Streaming/Channels/101"; break;;
-        3) DEFAULT_RTSP_PATH="/stream1"; break;;
-        4) 
+        1) DEFAULT_RTSP_PATH="/axis-media/media.amp"; break;;
+        2) DEFAULT_RTSP_PATH="/cam/realmonitor?channel=1&subtype=0"; break;;
+        3) DEFAULT_RTSP_PATH="/Streaming/Channels/101"; break;;
+        4) DEFAULT_RTSP_PATH="/stream1"; break;;
+        5) 
             read -p "RTSP-Pfad eingeben (z.B. /live/main): " DEFAULT_RTSP_PATH
             break;;
-        *) echo -e "${RED}Bitte 1, 2, 3 oder 4 eingeben.${NC}";;
+        *) echo -e "${RED}Bitte 1, 2, 3, 4 oder 5 eingeben.${NC}";;
     esac
 done
 
