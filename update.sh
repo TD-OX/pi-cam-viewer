@@ -68,6 +68,23 @@ Section "OutputClass"
 EndSection
 EOF
 
+# Plymouth (Boot-Splash) deaktivieren - verursacht VT-Switch der X kaputt macht
+echo "Deaktiviere Boot-Splash..."
+for CMDLINE in /boot/cmdline.txt /boot/firmware/cmdline.txt; do
+    if [ -f "$CMDLINE" ]; then
+        # splash entfernen
+        sed -i 's/ splash//g; s/splash //g; s/^splash$//g' "$CMDLINE"
+        # quiet entfernen
+        sed -i 's/ quiet//g; s/quiet //g; s/^quiet$//g' "$CMDLINE"
+        # plymouth.ignore-serial-consoles entfernen
+        sed -i 's/ plymouth\.ignore-serial-consoles//g' "$CMDLINE"
+    fi
+done
+
+# Plymouth Service deaktivieren falls vorhanden
+systemctl disable plymouth 2>/dev/null || true
+systemctl mask plymouth 2>/dev/null || true
+
 echo ""
 echo "4/5 Aktualisiere Programmdateien..."
 cp "$SCRIPT_DIR/cam-viewer.py" "$INSTALL_DIR/"

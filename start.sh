@@ -48,12 +48,13 @@ if ! command -v mpv &> /dev/null; then
     exit 1
 fi
 
-log "Starte X-Server..."
+log "Starte X-Server (auf VT7)..."
 log "(Falls schwarzer Bildschirm: Wechsle zu TTY2 mit Strg+Alt+F2)"
 log "(Log: $LOG_FILE)"
 
-# X11 starten - Output ins Log
-startx "$SCRIPT_DIR/xinitrc" -- -nocursor >> "$LOG_FILE" 2>&1
+# X11 starten auf VT7 (separater virtueller Terminal)
+# Dadurch keine Konflikte mit System-Console auf TTY1
+startx "$SCRIPT_DIR/xinitrc" -- :0 vt7 -nocursor >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 log "X-Server beendet (Exit-Code: $EXIT_CODE)"
