@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Kamera-Viewer für Raspberry Pi
-Zeigt RTSP-Streams von Netzwerkkameras auf dem Monitor an.
+Kamera-Viewer für Raspberry Pi (DRM-Mode, ohne X11)
+- 1 Kamera: mpv direkt im Vollbild
+- Mehrere Kameras: ffmpeg kombiniert die Streams zu einem Mosaic, mpv zeigt es an
 """
 
 import subprocess
@@ -13,44 +14,19 @@ import yaml
 import math
 from pathlib import Path
 
-# Globale Liste der laufenden Prozesse
 processes = []
 
 def load_config(config_path: str) -> dict:
-    """Lädt die Konfiguration aus der YAML-Datei."""
     with open(config_path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
-def get_display_resolution() -> tuple[int, int]:
-    """Ermittelt die aktuelle Display-Auflösung."""
-    try:
-        result = subprocess.run(
-            ['xdpyinfo'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        for line in result.stdout.split('\n'):
-            if 'dimensions:' in line:
-                # Format: "dimensions:    1920x1080 pixels"
-                dims = line.split()[1]
-                w, h = dims.split('x')
-                return int(w), int(h)
-    except Exception as e:
-        print(f"Warnung: Display-Auflösung konnte nicht ermittelt werden: {e}")
-    
-    # Fallback
-    return 1920, 1080
-
 def build_rtsp_url(camera: dict, defaults: dict) -> str:
-    """Baut die RTSP-URL für eine Kamera zusammen."""
     ip = camera['ip']
     port = camera.get('port', defaults.get('port', 554))
     username = camera.get('username', '')
     password = camera.get('password', '')
     rtsp_path = camera.get('rtsp_path', defaults.get('rtsp_path', '/stream1'))
     
-    # Authentifizierung einbauen falls vorhanden
     if username and password:
         auth = f"{username}:{password}@"
     elif username:
@@ -60,186 +36,183 @@ def build_rtsp_url(camera: dict, defaults: dict) -> str:
     
     return f"rtsp://{auth}{ip}:{port}{rtsp_path}"
 
-def calculate_grid(num_cameras: int, screen_w: int, screen_h: int) -> list[dict]:
-    """Berechnet die Positionen für ein Grid-Layout."""
-    if num_cameras == 0:
-        return []
-    
-    # Optimale Grid-Größe berechnen
-    cols = math.ceil(math.sqrt(num_cameras))
-    rows = math.ceil(num_cameras / cols)
-    
-    cell_w = screen_w // cols
-    cell_h = screen_h // rows
-    
-    positions = []
-    for i in range(num_cameras):
-        row = i // cols
-        col = i % cols
-        positions.append({
-            'x': col * cell_w,
-            'y': row * cell_h,
-            'w': cell_w,
-            'h': cell_h
-        })
-    
-    return positions
+def safe_url_for_log(url: str) -> str:
+    if '@' in url:
+        prefix, suffix = url.split('@', 1)
+        return prefix.split('://')[0] + '://***@' + suffix
+    return url
 
-def start_mpv_stream(rtsp_url: str, geometry: dict, name: str, transport: str, buffer_ms: int) -> subprocess.Popen:
-    """Startet einen mpv-Prozess für einen Kamera-Stream."""
+def cleanup(signum=None, frame=None):
+    print("\n[cleanup] Beende alle Prozesse...", flush=True)
+    for proc in processes:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+    time.sleep(1)
+    for proc in processes:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+    print("[cleanup] Beendet.", flush=True)
+    sys.exit(0)
+
+def run_single_camera(camera: dict, defaults: dict):
+    """Eine Kamera direkt fullscreen auf DRM."""
+    rtsp_url = build_rtsp_url(camera, defaults)
+    transport = camera.get('transport', defaults.get('transport', 'tcp'))
     
-    # mpv-Optionen für stabiles RTSP-Streaming
-    # Vereinfachte Konfiguration für maximale Kompatibilität
+    print(f"[main] Starte Kamera: {camera['name']} ({safe_url_for_log(rtsp_url)})", flush=True)
+    
     cmd = [
         'mpv',
         '--no-terminal',
         '--no-osc',
         '--no-input-default-bindings',
-        '--no-border',
-        '--keepaspect=no',
-        '--vo=x11',                    # Reines X11 (am kompatibelsten)
-        '--hwdec=no',                  # Keine HW-Dekodierung (stabil)
+        '--vo=drm',
+        '--hwdec=auto-safe',
         '--profile=low-latency',
-        f'--geometry={geometry["w"]}x{geometry["h"]}+{geometry["x"]}+{geometry["y"]}',
+        '--fullscreen',
+        '--keepaspect=no',
         f'--rtsp-transport={transport}',
         '--cache=yes',
         '--demuxer-max-bytes=20M',
         '--network-timeout=10',
         '--loop=inf',
-        '--force-window=yes',
-        '--title=' + name,
         rtsp_url
     ]
     
-    # URL für Logging maskieren (Passwort verstecken)
-    safe_url = rtsp_url
-    if '@' in rtsp_url:
-        prefix, suffix = rtsp_url.split('@', 1)
-        safe_url = prefix.split('://')[0] + '://***@' + suffix
-    print(f"Starte {name}: {safe_url}")
-    
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-        start_new_session=True
-    )
-    
-    return proc
-
-def cleanup(signum=None, frame=None):
-    """Beendet alle laufenden Prozesse sauber."""
-    print("\nBeende alle Streams...")
-    for proc in processes:
+    while True:
+        print(f"[main] Starte mpv...", flush=True)
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    
-    # Kurz warten, dann SIGKILL falls nötig
-    time.sleep(1)
-    for proc in processes:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    
-    print("Beendet.")
-    sys.exit(0)
+            proc = subprocess.Popen(cmd, start_new_session=True)
+            processes.append(proc)
+            proc.wait()
+            print(f"[main] mpv beendet (Code: {proc.returncode}), neu in 5s...", flush=True)
+        except FileNotFoundError:
+            print("[main] FEHLER: mpv nicht gefunden!", flush=True)
+            sys.exit(1)
+        except Exception as e:
+            print(f"[main] Fehler: {e}", flush=True)
+        
+        if processes and processes[-1] == proc:
+            processes.pop()
+        time.sleep(5)
 
-def monitor_streams(cameras_config: list, defaults: dict, positions: list):
-    """Überwacht Streams und startet sie bei Bedarf neu."""
-    global processes
+def run_multi_camera(cameras: list, defaults: dict):
+    """Mehrere Streams via ffmpeg mosaic + mpv auf DRM."""
+    num_cameras = len(cameras)
+    cols = math.ceil(math.sqrt(num_cameras))
+    rows = math.ceil(num_cameras / cols)
+    
+    target_w = (1920 // cols) - ((1920 // cols) % 2)
+    target_h = (1080 // rows) - ((1080 // rows) % 2)
+    
+    print(f"[main] Mosaic: {cols}x{rows} Grid, {target_w}x{target_h} pro Kamera", flush=True)
+    
+    cmd = ['ffmpeg', '-loglevel', 'warning']
+    for cam in cameras:
+        rtsp_url = build_rtsp_url(cam, defaults)
+        transport = cam.get('transport', defaults.get('transport', 'tcp'))
+        cmd.extend(['-rtsp_transport', transport, '-i', rtsp_url])
+    
+    filter_parts = []
+    for i in range(num_cameras):
+        filter_parts.append(f'[{i}:v]scale={target_w}:{target_h},setpts=PTS-STARTPTS[s{i}]')
+    
+    layout_parts = []
+    for i in range(num_cameras):
+        col = i % cols
+        row = i // cols
+        layout_parts.append(f'{col * target_w}_{row * target_h}')
+    
+    inputs_str = ''.join([f'[s{i}]' for i in range(num_cameras)])
+    filter_parts.append(f'{inputs_str}xstack=inputs={num_cameras}:layout={"|".join(layout_parts)}[out]')
+    
+    cmd.extend([
+        '-filter_complex', ';'.join(filter_parts),
+        '-map', '[out]',
+        '-c:v', 'rawvideo',
+        '-pix_fmt', 'yuv420p',
+        '-f', 'rawvideo',
+        '-'
+    ])
+    
+    mpv_cmd = [
+        'mpv', '--no-terminal', '--no-osc',
+        '--no-input-default-bindings',
+        '--vo=drm', '--hwdec=no', '--fullscreen',
+        '--demuxer=rawvideo',
+        f'--demuxer-rawvideo-w={cols * target_w}',
+        f'--demuxer-rawvideo-h={rows * target_h}',
+        '--demuxer-rawvideo-mp-format=yuv420p',
+        '--demuxer-rawvideo-fps=15',
+        '-'
+    ]
     
     while True:
-        for i, (cam, pos) in enumerate(zip(cameras_config, positions)):
-            if i < len(processes):
-                proc = processes[i]
-                if proc.poll() is not None:
-                    # Prozess ist beendet, neu starten
-                    print(f"Stream {cam['name']} wird neu gestartet...")
-                    rtsp_url = build_rtsp_url(cam, defaults)
-                    transport = cam.get('transport', defaults.get('transport', 'tcp'))
-                    buffer_ms = cam.get('buffer_ms', defaults.get('buffer_ms', 500))
-                    processes[i] = start_mpv_stream(rtsp_url, pos, cam['name'], transport, buffer_ms)
-                    time.sleep(0.5)
+        print(f"[main] Starte ffmpeg + mpv...", flush=True)
+        try:
+            ffmpeg_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                           stderr=subprocess.STDOUT, start_new_session=True)
+            mpv_proc = subprocess.Popen(mpv_cmd, stdin=ffmpeg_proc.stdout, start_new_session=True)
+            processes.extend([ffmpeg_proc, mpv_proc])
+            mpv_proc.wait()
+            print(f"[main] mpv beendet (Code: {mpv_proc.returncode})", flush=True)
+            try:
+                ffmpeg_proc.terminate()
+                ffmpeg_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                ffmpeg_proc.kill()
+        except FileNotFoundError as e:
+            print(f"[main] FEHLER: {e}", flush=True)
+            sys.exit(1)
+        except Exception as e:
+            print(f"[main] Fehler: {e}", flush=True)
         
-        time.sleep(5)  # Alle 5 Sekunden prüfen
+        processes.clear()
+        print(f"[main] Neu starten in 5s...", flush=True)
+        time.sleep(5)
 
 def main():
-    global processes
+    print("[main] === Kamera-Viewer Start (DRM-Mode) ===", flush=True)
     
-    # Signal-Handler für sauberes Beenden
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
     
-    # Konfigurationspfad
     script_dir = Path(__file__).parent.resolve()
     config_path = script_dir / 'config.yaml'
     
     if not config_path.exists():
-        print(f"Fehler: Konfigurationsdatei nicht gefunden: {config_path}")
+        print(f"[main] FEHLER: Konfigurationsdatei nicht gefunden: {config_path}", flush=True)
         sys.exit(1)
     
-    print("Lade Konfiguration...")
+    print("[main] Lade Konfiguration...", flush=True)
     config = load_config(config_path)
     
     cameras = config.get('cameras', [])
     defaults = config.get('defaults', {})
-    display_config = config.get('display', {})
     
     if not cameras:
-        print("Fehler: Keine Kameras in der Konfiguration definiert!")
+        print("[main] FEHLER: Keine Kameras in der Konfiguration!", flush=True)
         sys.exit(1)
     
-    print(f"Gefunden: {len(cameras)} Kamera(s)")
+    print(f"[main] Gefunden: {len(cameras)} Kamera(s)", flush=True)
+    for cam in cameras:
+        print(f"[main]   - {cam['name']} ({cam['ip']})", flush=True)
     
-    # Display-Auflösung
-    resolution = display_config.get('resolution', '')
-    if resolution:
-        screen_w, screen_h = map(int, resolution.split('x'))
-    else:
-        screen_w, screen_h = get_display_resolution()
-    
-    print(f"Display-Auflösung: {screen_w}x{screen_h}")
-    
-    # Grid-Positionen berechnen
-    positions = calculate_grid(len(cameras), screen_w, screen_h)
-    
-    # Hintergrund setzen (optional, falls gewünscht)
     try:
-        subprocess.run(['xsetroot', '-solid', display_config.get('background', '#000000')], check=False)
+        subprocess.run(['setterm', '--blank', '0', '--powerdown', '0'], check=False)
     except FileNotFoundError:
         pass
     
-    # Cursor ausblenden
-    try:
-        subprocess.Popen(['unclutter', '-idle', '0', '-root'], 
-                        stdout=subprocess.DEVNULL, 
-                        stderr=subprocess.DEVNULL)
-    except FileNotFoundError:
-        print("Warnung: unclutter nicht installiert, Cursor bleibt sichtbar")
-    
-    # Bildschirmschoner deaktivieren
-    subprocess.run(['xset', 's', 'off'], check=False)
-    subprocess.run(['xset', '-dpms'], check=False)
-    subprocess.run(['xset', 's', 'noblank'], check=False)
-    
-    # Streams starten
-    print("\nStarte Kamera-Streams...")
-    for cam, pos in zip(cameras, positions):
-        rtsp_url = build_rtsp_url(cam, defaults)
-        transport = cam.get('transport', defaults.get('transport', 'tcp'))
-        buffer_ms = cam.get('buffer_ms', defaults.get('buffer_ms', 500))
-        
-        proc = start_mpv_stream(rtsp_url, pos, cam['name'], transport, buffer_ms)
-        processes.append(proc)
-        time.sleep(0.5)  # Kurze Pause zwischen Starts
-    
-    print(f"\nAlle {len(cameras)} Streams gestartet. Drücke Strg+C zum Beenden.\n")
-    
-    # Streams überwachen und bei Bedarf neu starten
-    monitor_streams(cameras, defaults, positions)
+    if len(cameras) == 1:
+        print("[main] Modus: Single-Camera", flush=True)
+        run_single_camera(cameras[0], defaults)
+    else:
+        print(f"[main] Modus: Multi-Camera Mosaic", flush=True)
+        run_multi_camera(cameras, defaults)
 
 if __name__ == '__main__':
     main()

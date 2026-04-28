@@ -1,8 +1,6 @@
 #!/bin/bash
-# Startskript für den Kamera-Viewer
-# Startet X11 mit minimalem Openbox und dann den Viewer
+# Startskript für den Kamera-Viewer (DRM-Mode, ohne X11)
 
-# Sicherstellen dass das Skript mit bash läuft
 if [ -z "$BASH_VERSION" ]; then
     exec bash "$0" "$@"
 fi
@@ -10,14 +8,13 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="$SCRIPT_DIR/cam-viewer.log"
 
-# Log-Datei zurücksetzen
 : > "$LOG_FILE"
 
 log() {
     echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"
 }
 
-log "=== Kamera-Viewer Start ==="
+log "=== Kamera-Viewer Start (DRM-Mode) ==="
 log "Benutzer: $(whoami)"
 log "TTY: $(tty)"
 
@@ -34,33 +31,29 @@ done
 
 sleep 2
 
-# Prüfen ob X11 installiert ist
-if ! command -v startx &> /dev/null; then
-    log "FEHLER: startx nicht installiert!"
-    log "Bitte installieren: sudo apt-get install -y xserver-xorg xinit"
-    sleep 30
-    exit 1
-fi
+# Konsole/Cursor verstecken
+setterm --blank 0 --powerdown 0 --cursor off 2>/dev/null || true
+echo -e "\033[?25l" 2>/dev/null || true
+clear
 
+# Pakete prüfen
 if ! command -v mpv &> /dev/null; then
     log "FEHLER: mpv nicht installiert!"
     sleep 30
     exit 1
 fi
 
-log "Starte X-Server (auf VT7)..."
-log "(Falls schwarzer Bildschirm: Wechsle zu TTY2 mit Strg+Alt+F2)"
-log "(Log: $LOG_FILE)"
+if ! command -v python3 &> /dev/null; then
+    log "FEHLER: python3 nicht installiert!"
+    sleep 30
+    exit 1
+fi
 
-# X11 starten auf VT7 (separater virtueller Terminal)
-# Dadurch keine Konflikte mit System-Console auf TTY1
-startx "$SCRIPT_DIR/xinitrc" -- :0 vt7 -nocursor >> "$LOG_FILE" 2>&1
-EXIT_CODE=$?
+log "Starte Kamera-Viewer..."
+log "(Falls Probleme: Wechsle zu TTY2 mit Strg+Alt+F2)"
 
-log "X-Server beendet (Exit-Code: $EXIT_CODE)"
-log "Letzte Zeilen des Logs:"
-tail -20 "$LOG_FILE"
+cd "$SCRIPT_DIR"
+python3 -u cam-viewer.py 2>&1 | tee -a "$LOG_FILE"
 
-# Bei Fehler nicht endlos neu starten
-log "Warte 30 Sekunden vor Neustart (oder Strg+C zum Abbrechen)..."
+log "Kamera-Viewer beendet"
 sleep 30
