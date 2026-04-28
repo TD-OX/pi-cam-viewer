@@ -40,6 +40,10 @@ fi
 
 echo "1/5 Hole neueste Version von GitHub..."
 cd "$SCRIPT_DIR"
+# Repository dem User gehört normalerweise dem Benutzer, aber falls als root
+# Dateien angelegt wurden, korrigieren:
+chown -R "$TARGET_USER:$TARGET_USER" "$SCRIPT_DIR"
+sudo -u "$TARGET_USER" git config --global --add safe.directory "$SCRIPT_DIR"
 sudo -u "$TARGET_USER" git reset --hard
 sudo -u "$TARGET_USER" git pull
 
