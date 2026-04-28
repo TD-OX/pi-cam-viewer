@@ -59,7 +59,7 @@ def cleanup(signum=None, frame=None):
     sys.exit(0)
 
 def run_single_camera(camera: dict, defaults: dict):
-    """Eine Kamera direkt fullscreen auf DRM."""
+    """Eine Kamera direkt fullscreen auf DRM mit minimaler Latenz."""
     rtsp_url = build_rtsp_url(camera, defaults)
     transport = camera.get('transport', defaults.get('transport', 'tcp'))
     
@@ -72,12 +72,19 @@ def run_single_camera(camera: dict, defaults: dict):
         '--no-input-default-bindings',
         '--vo=drm',
         '--hwdec=auto-safe',
-        '--profile=low-latency',
         '--fullscreen',
         '--keepaspect=no',
+        # === Latenz-Optimierungen ===
+        '--profile=low-latency',           # Aktiviert viele Low-Latency-Defaults
+        '--cache=no',                      # Kein Cache
+        '--untimed',                       # Keine Frame-Timing-Verzögerung
+        '--no-correct-pts',                # PTS nicht korrigieren
+        '--video-sync=desync',             # Sofortige Wiedergabe
+        '--demuxer-lavf-o-set=fflags=+nobuffer+flush_packets',
+        '--demuxer-lavf-o-set=flags=+low_delay',
+        '--vd-lavc-threads=1',             # Single-Thread = niedrigere Latenz
+        # === RTSP ===
         f'--rtsp-transport={transport}',
-        '--cache=yes',
-        '--demuxer-max-bytes=20M',
         '--network-timeout=10',
         '--loop=inf',
         rtsp_url
@@ -101,7 +108,7 @@ def run_single_camera(camera: dict, defaults: dict):
         time.sleep(5)
 
 def run_multi_camera(cameras: list, defaults: dict):
-    """Mehrere Streams via ffmpeg mosaic + mpv auf DRM."""
+    """Mehrere Streams via ffmpeg mosaic + mpv auf DRM mit niedriger Latenz."""
     num_cameras = len(cameras)
     cols = math.ceil(math.sqrt(num_cameras))
     rows = math.ceil(num_cameras / cols)
@@ -111,11 +118,20 @@ def run_multi_camera(cameras: list, defaults: dict):
     
     print(f"[main] Mosaic: {cols}x{rows} Grid, {target_w}x{target_h} pro Kamera", flush=True)
     
-    cmd = ['ffmpeg', '-loglevel', 'warning']
+    # ffmpeg mit Low-Latency-Optionen
+    cmd = ['ffmpeg', '-loglevel', 'warning',
+           '-fflags', 'nobuffer+flush_packets',
+           '-flags', 'low_delay',
+           '-strict', 'experimental']
+    
     for cam in cameras:
         rtsp_url = build_rtsp_url(cam, defaults)
         transport = cam.get('transport', defaults.get('transport', 'tcp'))
-        cmd.extend(['-rtsp_transport', transport, '-i', rtsp_url])
+        cmd.extend([
+            '-rtsp_transport', transport,
+            '-fflags', 'nobuffer',
+            '-i', rtsp_url
+        ])
     
     filter_parts = []
     for i in range(num_cameras):
@@ -135,6 +151,7 @@ def run_multi_camera(cameras: list, defaults: dict):
         '-map', '[out]',
         '-c:v', 'rawvideo',
         '-pix_fmt', 'yuv420p',
+        '-tune', 'zerolatency',
         '-f', 'rawvideo',
         '-'
     ])
@@ -143,6 +160,14 @@ def run_multi_camera(cameras: list, defaults: dict):
         'mpv', '--no-terminal', '--no-osc',
         '--no-input-default-bindings',
         '--vo=drm', '--hwdec=no', '--fullscreen',
+        # Latenz-Optimierungen
+        '--profile=low-latency',
+        '--cache=no',
+        '--untimed',
+        '--no-correct-pts',
+        '--video-sync=desync',
+        '--vd-lavc-threads=1',
+        # Rawvideo-Demuxer
         '--demuxer=rawvideo',
         f'--demuxer-rawvideo-w={cols * target_w}',
         f'--demuxer-rawvideo-h={rows * target_h}',
