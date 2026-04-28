@@ -53,6 +53,7 @@ echo ""
 apt-get update
 apt-get install -y \
     xserver-xorg \
+    xserver-xorg-video-modesetting \
     x11-xserver-utils \
     xinit \
     openbox \
@@ -60,7 +61,8 @@ apt-get install -y \
     python3 \
     python3-yaml \
     unclutter \
-    xdotool
+    xdotool \
+    libgl1-mesa-dri
 
 echo ""
 echo "Erstelle Installationsverzeichnis..."
@@ -96,6 +98,18 @@ mkdir -p /etc/X11
 cat > /etc/X11/Xwrapper.config << 'EOF'
 allowed_users=anybody
 needs_root_rights=yes
+EOF
+
+echo "Konfiguriere X11-Treiber für Raspberry Pi..."
+# Auf Pi 4/5 mit Bookworm/Trixie: modesetting Treiber statt fbdev
+mkdir -p /etc/X11/xorg.conf.d
+cat > /etc/X11/xorg.conf.d/10-modesetting.conf << 'EOF'
+Section "OutputClass"
+    Identifier "vc4"
+    MatchDriver "vc4"
+    Driver "modesetting"
+    Option "PrimaryGPU" "true"
+EndSection
 EOF
 
 echo "Konfiguriere Auto-Start beim Login..."
