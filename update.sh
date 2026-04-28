@@ -70,6 +70,7 @@ echo ""
 echo "4/5 Aktualisiere Programmdateien..."
 cp "$SCRIPT_DIR/cam-viewer.py" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/start.sh" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/stop.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/test-camera.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/setup.sh" "$INSTALL_DIR/"
 
@@ -77,6 +78,7 @@ cp "$SCRIPT_DIR/setup.sh" "$INSTALL_DIR/"
 rm -f "$INSTALL_DIR/xinitrc"
 
 chmod +x "$INSTALL_DIR/start.sh"
+chmod +x "$INSTALL_DIR/stop.sh"
 chmod +x "$INSTALL_DIR/cam-viewer.py"
 chmod +x "$INSTALL_DIR/test-camera.sh"
 chmod +x "$INSTALL_DIR/setup.sh"
@@ -84,6 +86,10 @@ chown -R "$TARGET_USER:$TARGET_USER" "$INSTALL_DIR"
 
 echo ""
 echo "5/5 Konfiguriere Auto-Start..."
+
+# SSH aktivieren (für einfaches Debugging ohne abtippen)
+systemctl enable ssh 2>/dev/null || true
+systemctl start ssh 2>/dev/null || true
 
 # Benutzer in video/render Gruppen für DRM-Zugriff
 usermod -aG video,render,tty "$TARGET_USER"

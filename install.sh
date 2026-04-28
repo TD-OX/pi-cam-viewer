@@ -68,16 +68,22 @@ mkdir -p "$INSTALL_DIR"
 echo "Kopiere Programmdateien..."
 cp "$SCRIPT_DIR/cam-viewer.py" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/start.sh" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/stop.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/test-camera.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/setup.sh" "$INSTALL_DIR/"
 
 chmod +x "$INSTALL_DIR/start.sh"
+chmod +x "$INSTALL_DIR/stop.sh"
 chmod +x "$INSTALL_DIR/cam-viewer.py"
 chmod +x "$INSTALL_DIR/test-camera.sh"
 chmod +x "$INSTALL_DIR/setup.sh"
 chown -R "$TARGET_USER:$TARGET_USER" "$INSTALL_DIR"
 
 echo ""
+echo "Aktiviere SSH-Zugang..."
+systemctl enable ssh 2>/dev/null || true
+systemctl start ssh 2>/dev/null || true
+
 echo "Konfiguriere Auto-Login auf TTY1..."
 mkdir -p /etc/systemd/system/getty@tty1.service.d/
 cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
