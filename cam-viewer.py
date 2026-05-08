@@ -2,7 +2,7 @@
 """
 Kamera-Viewer für Raspberry Pi (DRM-Mode, ohne X11)
 - 1 Kamera: mpv direkt im Vollbild
-- Mehrere Kameras: ffmpeg kombiniert die Streams zu einem Mosaic, mpv zeigt es an
+- Mehrere Kameras: mpv kombiniert die Streams per lavfi-complex zu einem Mosaic
 """
 
 import subprocess
@@ -11,7 +11,6 @@ import os
 import signal
 import time
 import yaml
-import math
 from pathlib import Path
 
 processes = []
@@ -131,7 +130,7 @@ def run_single_camera(camera: dict, defaults: dict):
 def get_grid_layout(n: int) -> tuple:
     """Gibt (cols, rows) für n Kameras zurück."""
     if n <= 1: return (1, 1)
-    if n == 2: return (2, 1)
+    if n == 2: return (1, 2)
     if n == 3: return (3, 1)
     if n == 4: return (2, 2)
     if n <= 6: return (3, 2)
@@ -253,8 +252,6 @@ def main():
     
     cameras = config.get('cameras', [])
     defaults = config.get('defaults', {})
-    cycle_interval = config.get('display', {}).get('cycle_interval', 10)
-    
     if not cameras:
         print("[main] FEHLER: Keine Kameras in der Konfiguration!", flush=True)
         sys.exit(1)
