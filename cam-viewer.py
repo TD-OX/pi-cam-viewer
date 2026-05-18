@@ -14,6 +14,9 @@ import yaml
 from pathlib import Path
 
 processes = []
+DEFAULT_SCREEN_W = 1920
+DEFAULT_SCREEN_H = 1080
+VALID_ROTATIONS = {0, 90, 180, 270}
 
 def load_config(config_path: str) -> dict:
     with open(config_path, 'r', encoding='utf-8') as f:
@@ -40,6 +43,59 @@ def safe_url_for_log(url: str) -> str:
         prefix, suffix = url.split('@', 1)
         return prefix.split('://')[0] + '://***@' + suffix
     return url
+
+def parse_resolution(value: str, default_w: int = DEFAULT_SCREEN_W, default_h: int = DEFAULT_SCREEN_H) -> tuple:
+    """Parst Auflösungen wie 1920x1080. Leere/ungültige Werte fallen auf 1920x1080 zurück."""
+    if not value:
+        return default_w, default_h
+
+    normalized = str(value).lower().replace(' ', '')
+    if 'x' not in normalized:
+        return default_w, default_h
+
+    width, height = normalized.split('x', 1)
+    try:
+        parsed_w = int(width)
+        parsed_h = int(height)
+    except ValueError:
+        return default_w, default_h
+
+    if parsed_w <= 0 or parsed_h <= 0:
+        return default_w, default_h
+
+    return parsed_w, parsed_h
+
+def get_display_settings(display: dict) -> dict:
+    """Ermittelt physische Ausgabe, logische Mosaic-Fläche und mpv-Rotation."""
+    display = display or {}
+    physical_w, physical_h = parse_resolution(display.get('resolution', ''))
+    orientation = display.get('orientation', 'landscape')
+
+    try:
+        rotation = int(display.get('rotation', 0))
+    except (TypeError, ValueError):
+        rotation = 0
+    if rotation not in VALID_ROTATIONS:
+        rotation = 0
+
+    if orientation == 'portrait' or rotation in {90, 270}:
+        logical_w = min(physical_w, physical_h)
+        logical_h = max(physical_w, physical_h)
+    else:
+        logical_w = max(physical_w, physical_h)
+        logical_h = min(physical_w, physical_h)
+
+    return {
+        'physical_w': physical_w,
+        'physical_h': physical_h,
+        'logical_w': logical_w,
+        'logical_h': logical_h,
+        'rotation': rotation,
+    }
+
+def add_rotation_option(cmd: list, rotation: int):
+    if rotation:
+        cmd.append(f'--video-rotate={rotation}')
 
 def cleanup(signum=None, frame=None):
     print("\n[cleanup] Beende alle Prozesse...", flush=True)
@@ -70,7 +126,7 @@ def cleanup(signum=None, frame=None):
     print("[cleanup] Beendet.", flush=True)
     sys.exit(0)
 
-def run_camera(camera: dict, defaults: dict, duration: int = None):
+def run_camera(camera: dict, defaults: dict, display_settings: dict, duration: int = None):
     """Zeigt eine Kamera fullscreen auf DRM. Optional: Begrenzte Dauer in Sekunden."""
     rtsp_url = build_rtsp_url(camera, defaults)
     transport = camera.get('transport', defaults.get('transport', 'tcp'))
@@ -97,8 +153,9 @@ def run_camera(camera: dict, defaults: dict, duration: int = None):
         '--vd-lavc-threads=1',
         f'--rtsp-transport={transport}',
         '--network-timeout=10',
-        rtsp_url
     ]
+    add_rotation_option(cmd, display_settings['rotation'])
+    cmd.append(rtsp_url)
     
     try:
         proc = subprocess.Popen(cmd, start_new_session=True)
@@ -120,16 +177,25 @@ def run_camera(camera: dict, defaults: dict, duration: int = None):
     except Exception as e:
         print(f"[main] Fehler: {e}", flush=True)
 
-def run_single_camera(camera: dict, defaults: dict):
+def run_single_camera(camera: dict, defaults: dict, display_settings: dict):
     """Eine Kamera dauerhaft fullscreen."""
     while True:
-        run_camera(camera, defaults, duration=None)
+        run_camera(camera, defaults, display_settings, duration=None)
         print(f"[main] mpv beendet, neu in 5s...", flush=True)
         time.sleep(5)
 
-def get_grid_layout(n: int) -> tuple:
+def get_grid_layout(n: int, portrait: bool = False) -> tuple:
     """Gibt (cols, rows) für n Kameras zurück."""
     if n <= 1: return (1, 1)
+
+    if portrait:
+        if n <= 3: return (1, n)
+        if n <= 4: return (2, 2)
+        if n <= 6: return (2, 3)
+        if n <= 9: return (3, 3)
+        if n <= 12: return (3, 4)
+        return (4, 4)
+
     if n == 2: return (1, 2)
     if n == 3: return (3, 1)
     if n == 4: return (2, 2)
@@ -141,7 +207,7 @@ def get_grid_layout(n: int) -> tuple:
 def build_lavfi_complex(num_cams: int, screen_w: int = 1920, screen_h: int = 1080) -> tuple:
     """Baut den lavfi-complex Filter-Graph für n Kameras.
     Gibt (filter_string, cell_w, cell_h) zurück."""
-    cols, rows = get_grid_layout(num_cams)
+    cols, rows = get_grid_layout(num_cams, portrait=screen_h > screen_w)
     
     cell_w = (screen_w // cols) - ((screen_w // cols) % 2)
     cell_h = (screen_h // rows) - ((screen_h // rows) % 2)
@@ -170,16 +236,23 @@ def build_lavfi_complex(num_cams: int, screen_w: int = 1920, screen_h: int = 108
     
     return ';'.join(parts), cell_w, cell_h
 
-def run_multi_camera(cameras: list, defaults: dict):
+def run_multi_camera(cameras: list, defaults: dict, display_settings: dict):
     """Alle Kameras gleichzeitig in einem Mosaic - via mpv lavfi-complex."""
     num_cameras = len(cameras)
     transport = defaults.get('transport', 'tcp')
     
-    cols, rows = get_grid_layout(num_cameras)
+    cols, rows = get_grid_layout(
+        num_cameras,
+        portrait=display_settings['logical_h'] > display_settings['logical_w'],
+    )
     print(f"[main] Mosaic: {cols}x{rows} Grid für {num_cameras} Kameras", flush=True)
     
     # Filter-Graph bauen
-    lavfi, cell_w, cell_h = build_lavfi_complex(num_cameras)
+    lavfi, cell_w, cell_h = build_lavfi_complex(
+        num_cameras,
+        display_settings['logical_w'],
+        display_settings['logical_h'],
+    )
     print(f"[main] Jede Kamera: {cell_w}x{cell_h}", flush=True)
     
     # URLs bauen
@@ -207,6 +280,7 @@ def run_multi_camera(cameras: list, defaults: dict):
         '--network-timeout=10',
         f'--lavfi-complex={lavfi}',
     ]
+    add_rotation_option(cmd, display_settings['rotation'])
     
     # Kameras 2..N als external_file
     for url in urls[1:]:
@@ -252,11 +326,18 @@ def main():
     
     cameras = config.get('cameras', [])
     defaults = config.get('defaults', {})
+    display_settings = get_display_settings(config.get('display', {}))
     if not cameras:
         print("[main] FEHLER: Keine Kameras in der Konfiguration!", flush=True)
         sys.exit(1)
     
     print(f"[main] Gefunden: {len(cameras)} Kamera(s)", flush=True)
+    print(
+        f"[main] Display: {display_settings['physical_w']}x{display_settings['physical_h']}, "
+        f"logisch {display_settings['logical_w']}x{display_settings['logical_h']}, "
+        f"Rotation {display_settings['rotation']}°",
+        flush=True,
+    )
     for cam in cameras:
         print(f"[main]   - {cam['name']} ({cam['ip']})", flush=True)
     
@@ -267,10 +348,10 @@ def main():
     
     if len(cameras) == 1:
         print("[main] Modus: Single-Camera (Vollbild)", flush=True)
-        run_single_camera(cameras[0], defaults)
+        run_single_camera(cameras[0], defaults, display_settings)
     else:
         print(f"[main] Modus: Mosaic - alle Kameras gleichzeitig", flush=True)
-        run_multi_camera(cameras, defaults)
+        run_multi_camera(cameras, defaults, display_settings)
 
 if __name__ == '__main__':
     main()

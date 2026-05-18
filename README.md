@@ -36,10 +36,11 @@ sudo bash install.sh
 Das Setup fragt dich nacheinander:
 
 1. **Netzwerk:** Welche IP soll der Pi bekommen? (z.B. `192.168.1.50` im Kamera-Netz)
-2. **Anzahl Kameras** (1-16)
-3. **RTSP-Pfad** der Kameras (AXIS, Burgwächter, Hikvision, ...)
-4. **Gleiche Zugangsdaten für alle?** (spart Tipparbeit)
-5. **Pro Kamera:** Name, IP, Benutzer, Passwort
+2. **Monitor-Ausrichtung:** Querformat, Hochformat und Drehrichtung
+3. **Anzahl Kameras** (1-16)
+4. **RTSP-Pfad** der Kameras (AXIS, Burgwächter, Hikvision, ...)
+5. **Gleiche Zugangsdaten für alle?** (spart Tipparbeit)
+6. **Pro Kamera:** Name, IP, Benutzer, Passwort
 
 Nach dem Setup wird automatisch neu gestartet. Beim Boot startet der Viewer ohne weitere Eingriffe.
 
