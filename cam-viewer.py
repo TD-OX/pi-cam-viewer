@@ -93,9 +93,20 @@ def get_display_settings(display: dict) -> dict:
         'rotation': rotation,
     }
 
-def add_rotation_option(cmd: list, rotation: int):
-    if rotation:
-        cmd.append(f'--video-rotate={rotation}')
+def get_rotation_filter(rotation: int) -> str:
+    """Gibt einen lavfi-Filter zurück, der das Bild vor der DRM-Ausgabe dreht."""
+    if rotation == 90:
+        return 'transpose=clock'
+    if rotation == 180:
+        return 'hflip,vflip'
+    if rotation == 270:
+        return 'transpose=cclock'
+    return ''
+
+def add_rotation_filter(cmd: list, rotation: int):
+    rotation_filter = get_rotation_filter(rotation)
+    if rotation_filter:
+        cmd.append(f'--vf=lavfi=[{rotation_filter}]')
 
 def cleanup(signum=None, frame=None):
     print("\n[cleanup] Beende alle Prozesse...", flush=True)
@@ -154,7 +165,7 @@ def run_camera(camera: dict, defaults: dict, display_settings: dict, duration: i
         f'--rtsp-transport={transport}',
         '--network-timeout=10',
     ]
-    add_rotation_option(cmd, display_settings['rotation'])
+    add_rotation_filter(cmd, display_settings['rotation'])
     cmd.append(rtsp_url)
 
     try:
@@ -204,7 +215,12 @@ def get_grid_layout(n: int, portrait: bool = False) -> tuple:
     if n <= 12: return (4, 3)
     return (4, 4)
 
-def build_lavfi_complex(num_cams: int, screen_w: int = 1920, screen_h: int = 1080) -> tuple:
+def build_lavfi_complex(
+    num_cams: int,
+    screen_w: int = 1920,
+    screen_h: int = 1080,
+    rotation: int = 0,
+) -> tuple:
     """Baut den lavfi-complex Filter-Graph für n Kameras.
     Gibt (filter_string, cell_w, cell_h) zurück."""
     cols, rows = get_grid_layout(num_cams, portrait=screen_h > screen_w)
@@ -232,7 +248,12 @@ def build_lavfi_complex(num_cams: int, screen_w: int = 1920, screen_h: int = 108
         layout_parts.append(f'{col * cell_w}_{row * cell_h}')
     layout = '|'.join(layout_parts)
 
-    parts.append(f'{inputs}xstack=inputs={total_slots}:layout={layout}[vo]')
+    rotation_filter = get_rotation_filter(rotation)
+    if rotation_filter:
+        parts.append(f'{inputs}xstack=inputs={total_slots}:layout={layout}[stacked]')
+        parts.append(f'[stacked]{rotation_filter}[vo]')
+    else:
+        parts.append(f'{inputs}xstack=inputs={total_slots}:layout={layout}[vo]')
 
     return ';'.join(parts), cell_w, cell_h
 
@@ -252,6 +273,7 @@ def run_multi_camera(cameras: list, defaults: dict, display_settings: dict):
         num_cameras,
         display_settings['logical_w'],
         display_settings['logical_h'],
+        display_settings['rotation'],
     )
     print(f"[main] Jede Kamera: {cell_w}x{cell_h}", flush=True)
 
@@ -280,7 +302,6 @@ def run_multi_camera(cameras: list, defaults: dict, display_settings: dict):
         '--network-timeout=10',
         f'--lavfi-complex={lavfi}',
     ]
-    add_rotation_option(cmd, display_settings['rotation'])
 
     # Kameras 2..N als external_file
     for url in urls[1:]:
