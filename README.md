@@ -8,7 +8,7 @@ Zeigt RTSP-Streams von Netzwerkkameras (AXIS, Burgwächter, Hikvision, ONVIF) au
 - **Interaktives Setup** - Kameras per Assistent einrichten
 - **Statisches Netzwerk** - Pi konfiguriert sich selbst eine IP im Kamera-Netz
 - Automatischer Start beim Booten
-- Automatisches Mosaic für mehrere Kameras (via ffmpeg)
+- Automatisches Mosaic für mehrere Kameras (via mpv/lavfi)
 - Vollbild für Einzelkameras
 - Automatischer Reconnect bei Verbindungsabbruch
 
@@ -26,7 +26,7 @@ Pi kurz ans Internet hängen, dann:
 ```bash
 # Repository klonen
 cd ~
-git clone https://github.com/DEIN-USERNAME/pi-cam-viewer.git
+git clone https://github.com/TD-OX/pi-cam-viewer.git
 cd pi-cam-viewer
 
 # Installieren (inkl. Setup und automatischem Reboot)
@@ -36,10 +36,11 @@ sudo bash install.sh
 Das Setup fragt dich nacheinander:
 
 1. **Netzwerk:** Welche IP soll der Pi bekommen? (z.B. `192.168.1.50` im Kamera-Netz)
-2. **Anzahl Kameras** (1-16)
-3. **RTSP-Pfad** der Kameras (AXIS, Burgwächter, Hikvision, ...)
-4. **Gleiche Zugangsdaten für alle?** (spart Tipparbeit)
-5. **Pro Kamera:** Name, IP, Benutzer, Passwort
+2. **Monitor-Ausrichtung:** Querformat, Hochformat und Drehrichtung
+3. **Anzahl Kameras** (1-16)
+4. **RTSP-Pfad** der Kameras (AXIS, Burgwächter, Hikvision, ...)
+5. **Gleiche Zugangsdaten für alle?** (spart Tipparbeit)
+6. **Pro Kamera:** Name, IP, Benutzer, Passwort
 
 Nach dem Setup wird automatisch neu gestartet. Beim Boot startet der Viewer ohne weitere Eingriffe.
 
@@ -96,7 +97,7 @@ cd ~/cam-viewer
 ## Architektur
 
 - **Single-Camera:** mpv direkt mit `--vo=drm` im Vollbild
-- **Multi-Camera:** ffmpeg kombiniert die Streams via `xstack` zu einem Mosaic, mpv zeigt es
+- **Multi-Camera:** mpv kombiniert die Streams via `lavfi-complex`/`xstack` zu einem Mosaic
 - **Auto-Start:** über `.bash_profile` bei Auto-Login auf TTY1
 - **Netzwerk:** statische IP via NetworkManager oder dhcpcd
 

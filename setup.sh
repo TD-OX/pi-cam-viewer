@@ -145,6 +145,49 @@ fi
 echo -e "${GREEN}Netzwerk konfiguriert: $PI_IP/$CIDR auf $NETWORK_IFACE${NC}"
 echo ""
 
+# Monitor-Ausrichtung
+echo -e "${BLUE}--- Monitor-Ausrichtung ---${NC}"
+echo ""
+echo "Wie ist der Monitor montiert?"
+echo "  [1] Querformat normal"
+echo "  [2] Querformat kopfüber"
+echo "  [3] Hochformat, linke Monitorseite ist oben"
+echo "  [4] Hochformat, rechte Monitorseite ist oben"
+echo ""
+
+while true; do
+    read -p "Monitor-Ausrichtung [1-4]: " MONITOR_CHOICE
+    case $MONITOR_CHOICE in
+        1)
+            DISPLAY_ORIENTATION="landscape"
+            DISPLAY_ROTATION="0"
+            DISPLAY_DESCRIPTION="Querformat normal"
+            break
+            ;;
+        2)
+            DISPLAY_ORIENTATION="landscape"
+            DISPLAY_ROTATION="180"
+            DISPLAY_DESCRIPTION="Querformat kopfüber"
+            break
+            ;;
+        3)
+            DISPLAY_ORIENTATION="portrait"
+            DISPLAY_ROTATION="270"
+            DISPLAY_DESCRIPTION="Hochformat, linke Seite oben"
+            break
+            ;;
+        4)
+            DISPLAY_ORIENTATION="portrait"
+            DISPLAY_ROTATION="90"
+            DISPLAY_DESCRIPTION="Hochformat, rechte Seite oben"
+            break
+            ;;
+        *) echo -e "${RED}Bitte 1, 2, 3 oder 4 eingeben.${NC}" ;;
+    esac
+done
+
+echo ""
+
 # Anzahl Kameras
 while true; do
     read -p "Wie viele Kameras sollen angezeigt werden? [1-16]: " NUM_CAMERAS
@@ -249,6 +292,8 @@ cat > "$CONFIG_FILE" << EOF
 
 display:
   resolution: ""
+  orientation: "$DISPLAY_ORIENTATION"
+  rotation: $DISPLAY_ROTATION
   layout: "grid"
   background: "#000000"
 
@@ -295,6 +340,7 @@ echo "Konfiguration gespeichert: $CONFIG_FILE"
 echo ""
 echo "Zusammenfassung:"
 echo "  - Pi IP-Adresse: $PI_IP/$CIDR"
+echo "  - Monitor: $DISPLAY_DESCRIPTION"
 echo "  - Kameras: $NUM_CAMERAS"
 echo "  - RTSP-Pfad: $DEFAULT_RTSP_PATH"
 echo ""

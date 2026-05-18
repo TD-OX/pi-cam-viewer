@@ -6,6 +6,10 @@
 display:
   # Auflösung des Monitors (leer = Auto)
   resolution: ""
+  # "landscape" (Querformat) oder "portrait" (Hochformat)
+  orientation: "landscape"
+  # Drehung des Bildes in Grad: 0, 90, 180 oder 270
+  rotation: 0
   # Hintergrundfarbe
   background: "#000000"
 
