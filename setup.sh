@@ -76,10 +76,10 @@ echo -e "${BLUE}Konfiguriere Netzwerk...${NC}"
 if systemctl is-active --quiet NetworkManager; then
     # NetworkManager (neuere Systeme)
     echo "Verwende NetworkManager..."
-    
+
     # Bestehende Verbindung löschen falls vorhanden
     nmcli con delete "cam-viewer-static" 2>/dev/null || true
-    
+
     # Neue statische Verbindung erstellen
     if [ -n "$GATEWAY" ]; then
         nmcli con add type ethernet con-name "cam-viewer-static" ifname "$NETWORK_IFACE" \
@@ -93,17 +93,17 @@ if systemctl is-active --quiet NetworkManager; then
             ipv4.method manual \
             autoconnect yes
     fi
-    
+
     # Verbindung aktivieren
     nmcli con up "cam-viewer-static"
-    
+
 elif [ -f /etc/dhcpcd.conf ]; then
     # dhcpcd (ältere Pi OS Versionen)
     echo "Verwende dhcpcd..."
-    
+
     # Alte Einträge entfernen
     sed -i '/# cam-viewer static IP/,/^$/d' /etc/dhcpcd.conf
-    
+
     # Neue Konfiguration anhängen
     cat >> /etc/dhcpcd.conf << EOF
 
@@ -111,20 +111,20 @@ elif [ -f /etc/dhcpcd.conf ]; then
 interface $NETWORK_IFACE
 static ip_address=$PI_IP/$CIDR
 EOF
-    
+
     if [ -n "$GATEWAY" ]; then
         echo "static routers=$GATEWAY" >> /etc/dhcpcd.conf
     fi
-    
+
     echo "" >> /etc/dhcpcd.conf
-    
+
 else
     # Fallback: /etc/network/interfaces
     echo "Verwende /etc/network/interfaces..."
-    
+
     # Backup
     cp /etc/network/interfaces /etc/network/interfaces.backup 2>/dev/null || true
-    
+
     cat > /etc/network/interfaces << EOF
 # Loopback
 auto lo
@@ -136,7 +136,7 @@ iface $NETWORK_IFACE inet static
     address $PI_IP
     netmask $NETMASK
 EOF
-    
+
     if [ -n "$GATEWAY" ]; then
         echo "    gateway $GATEWAY" >> /etc/network/interfaces
     fi
@@ -213,7 +213,7 @@ while true; do
         2) DEFAULT_RTSP_PATH="/cam/realmonitor?channel=1&subtype=0"; break;;
         3) DEFAULT_RTSP_PATH="/Streaming/Channels/101"; break;;
         4) DEFAULT_RTSP_PATH="/stream1"; break;;
-        5) 
+        5)
             read -p "RTSP-Pfad eingeben (z.B. /live/main): " DEFAULT_RTSP_PATH
             break;;
         *) echo -e "${RED}Bitte 1, 2, 3, 4 oder 5 eingeben.${NC}";;
@@ -244,11 +244,11 @@ declare -a CAMERAS
 
 for ((i=1; i<=NUM_CAMERAS; i++)); do
     echo -e "${GREEN}Kamera $i von $NUM_CAMERAS:${NC}"
-    
+
     # Name
     read -p "  Name (z.B. Einfahrt, Garten): " CAM_NAME
     [ -z "$CAM_NAME" ] && CAM_NAME="Kamera $i"
-    
+
     # IP
     while true; do
         read -p "  IP-Adresse: " CAM_IP
@@ -257,7 +257,7 @@ for ((i=1; i<=NUM_CAMERAS; i++)); do
         fi
         echo -e "${RED}  Ungültige IP-Adresse. Format: 192.168.1.100${NC}"
     done
-    
+
     # Zugangsdaten (wenn nicht global)
     if [[ ! "$SAME_CREDENTIALS" =~ ^[Jj]$ ]]; then
         read -p "  Benutzername (leer = keine Auth): " CAM_USER
@@ -271,14 +271,14 @@ for ((i=1; i<=NUM_CAMERAS; i++)); do
         CAM_USER="$GLOBAL_USER"
         CAM_PASS="$GLOBAL_PASS"
     fi
-    
+
     # Optional: eigener RTSP-Pfad
     read -p "  Eigener RTSP-Pfad? (Enter = Standard): " CAM_RTSP
     [ -z "$CAM_RTSP" ] && CAM_RTSP=""
-    
+
     # Speichern
     CAMERAS+=("$CAM_NAME|$CAM_IP|$CAM_USER|$CAM_PASS|$CAM_RTSP")
-    
+
     echo ""
 done
 
@@ -308,10 +308,10 @@ EOF
 
 for cam in "${CAMERAS[@]}"; do
     IFS='|' read -r name ip user pass rtsp <<< "$cam"
-    
+
     echo "  - name: \"$name\"" >> "$CONFIG_FILE"
     echo "    ip: \"$ip\"" >> "$CONFIG_FILE"
-    
+
     if [ -n "$user" ]; then
         echo "    username: \"$user\"" >> "$CONFIG_FILE"
         echo "    password: \"$pass\"" >> "$CONFIG_FILE"
@@ -319,11 +319,11 @@ for cam in "${CAMERAS[@]}"; do
         echo "    username: \"\"" >> "$CONFIG_FILE"
         echo "    password: \"\"" >> "$CONFIG_FILE"
     fi
-    
+
     if [ -n "$rtsp" ]; then
         echo "    rtsp_path: \"$rtsp\"" >> "$CONFIG_FILE"
     fi
-    
+
     echo "" >> "$CONFIG_FILE"
 done
 

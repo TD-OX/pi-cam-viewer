@@ -16,17 +16,17 @@ display:
 # Globale Standardwerte (können pro Kamera überschrieben werden)
 defaults:
   port: 554
-  
+
   # RTSP-Pfade für gängige Hersteller:
   # AXIS:              /axis-media/media.amp
   # Burgwächter/Dahua: /cam/realmonitor?channel=1&subtype=0
   # Hikvision:         /Streaming/Channels/101
   # ONVIF generisch:   /stream1
   rtsp_path: "/axis-media/media.amp"
-  
+
   # Transport: "tcp" (stabil) oder "udp" (weniger Latenz)
   transport: "tcp"
-  
+
   buffer_ms: 500
 
 # Kamera-Liste
@@ -35,7 +35,7 @@ cameras:
     ip: "192.168.1.100"
     username: "admin"
     password: "passwort123"
-    
+
   - name: "Halle"
     ip: "192.168.1.101"
     username: "admin"

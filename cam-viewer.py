@@ -28,14 +28,14 @@ def build_rtsp_url(camera: dict, defaults: dict) -> str:
     username = camera.get('username', '')
     password = camera.get('password', '')
     rtsp_path = camera.get('rtsp_path', defaults.get('rtsp_path', '/stream1'))
-    
+
     if username and password:
         auth = f"{username}:{password}@"
     elif username:
         auth = f"{username}@"
     else:
         auth = ""
-    
+
     return f"rtsp://{auth}{ip}:{port}{rtsp_path}"
 
 def safe_url_for_log(url: str) -> str:
@@ -110,7 +110,7 @@ def cleanup(signum=None, frame=None):
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, OSError):
             pass
-    
+
     # Konsole zurücksetzen, sonst bleibt der Bildschirm schwarz
     try:
         # Display/Konsole zurücksetzen
@@ -122,7 +122,7 @@ def cleanup(signum=None, frame=None):
         subprocess.run(['chvt', '1'], check=False, stderr=subprocess.DEVNULL)
     except Exception:
         pass
-    
+
     print("[cleanup] Beendet.", flush=True)
     sys.exit(0)
 
@@ -130,9 +130,9 @@ def run_camera(camera: dict, defaults: dict, display_settings: dict, duration: i
     """Zeigt eine Kamera fullscreen auf DRM. Optional: Begrenzte Dauer in Sekunden."""
     rtsp_url = build_rtsp_url(camera, defaults)
     transport = camera.get('transport', defaults.get('transport', 'tcp'))
-    
+
     print(f"[main] Zeige: {camera['name']} ({safe_url_for_log(rtsp_url)})", flush=True)
-    
+
     cmd = [
         'mpv',
         '--no-terminal',
@@ -156,7 +156,7 @@ def run_camera(camera: dict, defaults: dict, display_settings: dict, duration: i
     ]
     add_rotation_option(cmd, display_settings['rotation'])
     cmd.append(rtsp_url)
-    
+
     try:
         proc = subprocess.Popen(cmd, start_new_session=True)
         processes.append(proc)
@@ -208,21 +208,21 @@ def build_lavfi_complex(num_cams: int, screen_w: int = 1920, screen_h: int = 108
     """Baut den lavfi-complex Filter-Graph für n Kameras.
     Gibt (filter_string, cell_w, cell_h) zurück."""
     cols, rows = get_grid_layout(num_cams, portrait=screen_h > screen_w)
-    
+
     cell_w = (screen_w // cols) - ((screen_w // cols) % 2)
     cell_h = (screen_h // rows) - ((screen_h // rows) % 2)
-    
+
     parts = []
-    
+
     # Jede Kamera skalieren (vid1 = erste Kamera, vid2 = zweite, ...)
     for i in range(num_cams):
         parts.append(f'[vid{i+1}]scale={cell_w}:{cell_h}:force_original_aspect_ratio=disable,setsar=1[s{i}]')
-    
+
     # Bei nicht-quadratischen Kamera-Anzahlen mit schwarzen Slots auffüllen
     total_slots = cols * rows
     for i in range(num_cams, total_slots):
         parts.append(f'color=size={cell_w}x{cell_h}:color=black:duration=999999[s{i}]')
-    
+
     # xstack mit absoluten Pixelpositionen
     inputs = ''.join([f'[s{i}]' for i in range(total_slots)])
     layout_parts = []
@@ -231,22 +231,22 @@ def build_lavfi_complex(num_cams: int, screen_w: int = 1920, screen_h: int = 108
         row = i // cols
         layout_parts.append(f'{col * cell_w}_{row * cell_h}')
     layout = '|'.join(layout_parts)
-    
+
     parts.append(f'{inputs}xstack=inputs={total_slots}:layout={layout}[vo]')
-    
+
     return ';'.join(parts), cell_w, cell_h
 
 def run_multi_camera(cameras: list, defaults: dict, display_settings: dict):
     """Alle Kameras gleichzeitig in einem Mosaic - via mpv lavfi-complex."""
     num_cameras = len(cameras)
     transport = defaults.get('transport', 'tcp')
-    
+
     cols, rows = get_grid_layout(
         num_cameras,
         portrait=display_settings['logical_h'] > display_settings['logical_w'],
     )
     print(f"[main] Mosaic: {cols}x{rows} Grid für {num_cameras} Kameras", flush=True)
-    
+
     # Filter-Graph bauen
     lavfi, cell_w, cell_h = build_lavfi_complex(
         num_cameras,
@@ -254,10 +254,10 @@ def run_multi_camera(cameras: list, defaults: dict, display_settings: dict):
         display_settings['logical_h'],
     )
     print(f"[main] Jede Kamera: {cell_w}x{cell_h}", flush=True)
-    
+
     # URLs bauen
     urls = [build_rtsp_url(cam, defaults) for cam in cameras]
-    
+
     # mpv-Befehl
     cmd = [
         'mpv',
@@ -281,16 +281,16 @@ def run_multi_camera(cameras: list, defaults: dict, display_settings: dict):
         f'--lavfi-complex={lavfi}',
     ]
     add_rotation_option(cmd, display_settings['rotation'])
-    
+
     # Kameras 2..N als external_file
     for url in urls[1:]:
         cmd.append(f'--external-file={url}')
-    
+
     # Hauptkamera (vid1) am Ende
     cmd.append(urls[0])
-    
+
     print(f"[main] Starte mpv mit lavfi-complex Mosaic...", flush=True)
-    
+
     while True:
         try:
             proc = subprocess.Popen(cmd, start_new_session=True)
@@ -302,7 +302,7 @@ def run_multi_camera(cameras: list, defaults: dict, display_settings: dict):
             sys.exit(1)
         except Exception as e:
             print(f"[main] Fehler: {e}", flush=True)
-        
+
         if processes and processes[-1] == proc:
             processes.pop()
         print(f"[main] Neu starten in 5s...", flush=True)
@@ -310,27 +310,27 @@ def run_multi_camera(cameras: list, defaults: dict, display_settings: dict):
 
 def main():
     print("[main] === Kamera-Viewer Start (DRM-Mode) ===", flush=True)
-    
+
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
-    
+
     script_dir = Path(__file__).parent.resolve()
     config_path = script_dir / 'config.yaml'
-    
+
     if not config_path.exists():
         print(f"[main] FEHLER: Konfigurationsdatei nicht gefunden: {config_path}", flush=True)
         sys.exit(1)
-    
+
     print("[main] Lade Konfiguration...", flush=True)
     config = load_config(config_path)
-    
+
     cameras = config.get('cameras', [])
     defaults = config.get('defaults', {})
     display_settings = get_display_settings(config.get('display', {}))
     if not cameras:
         print("[main] FEHLER: Keine Kameras in der Konfiguration!", flush=True)
         sys.exit(1)
-    
+
     print(f"[main] Gefunden: {len(cameras)} Kamera(s)", flush=True)
     print(
         f"[main] Display: {display_settings['physical_w']}x{display_settings['physical_h']}, "
@@ -340,12 +340,12 @@ def main():
     )
     for cam in cameras:
         print(f"[main]   - {cam['name']} ({cam['ip']})", flush=True)
-    
+
     try:
         subprocess.run(['setterm', '--blank', '0', '--powerdown', '0'], check=False)
     except FileNotFoundError:
         pass
-    
+
     if len(cameras) == 1:
         print("[main] Modus: Single-Camera (Vollbild)", flush=True)
         run_single_camera(cameras[0], defaults, display_settings)

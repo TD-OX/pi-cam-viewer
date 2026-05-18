@@ -136,7 +136,7 @@ echo ""
 read -p "Möchtest du jetzt die Kameras einrichten? [J/n]: " DO_SETUP
 if [[ ! "$DO_SETUP" =~ ^[Nn]$ ]]; then
     bash "$INSTALL_DIR/setup.sh"
-    
+
     echo ""
     echo -e "${GREEN}======================================"
     echo "   Installation komplett!"
